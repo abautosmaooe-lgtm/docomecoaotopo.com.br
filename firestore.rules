@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // DefaultCatch-all rule to deny all read/write accesses
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Global Authentication and Identity verification helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    match /portal/config {
+      allow read: if true;
+      allow write: if isVerifiedUser();
+    }
+
+    match /photos/{photoId} {
+      allow read: if true;
+      allow write: if isVerifiedUser();
+    }
+  }
+}
