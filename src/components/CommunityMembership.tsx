@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Check, Sparkles, Send, Users, ShieldCheck, Heart, Volume2, ChevronDown, ChevronUp, Edit3, Save, X, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
 import { playClickSound, playSuccessSound } from "../utils/audio";
 import { toast } from "sonner";
+import { saveMatriculaToFirestore } from "../services/userService";
 
 // --- Ripple Button Implementation ---
 interface RippleButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -518,7 +519,7 @@ export default function CommunityMembership({ isDarkMode, isAdmin = false }: Com
           }
         }
       })
-      .catch((err) => console.error("Error loading community membership:", err));
+      .catch(() => {});
   }, []);
 
   const handleToggleCollapse = () => {
@@ -600,6 +601,15 @@ export default function CommunityMembership({ isDarkMode, isAdmin = false }: Com
     playSuccessSound();
 
     try {
+      // 1. Direct Firestore write to 'matriculas' collection
+      await saveMatriculaToFirestore({
+        plan: selectedPlan,
+        name: contactName,
+        whatsapp: contactWhatsApp,
+        sector: businessSector
+      });
+
+      // 2. Also send to API endpoint for redundancy
       await fetch("/api/community-enrollment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -609,14 +619,14 @@ export default function CommunityMembership({ isDarkMode, isAdmin = false }: Com
           whatsapp: contactWhatsApp,
           sector: businessSector
         })
-      });
+      }).catch(err => console.warn("API enrollment sync non-blocking:", err));
       
       setLoading(false);
-      toast.success("Cadastro enviado com sucesso! Nosso time entrará em contato em minutos via WhatsApp.");
+      toast.success("Matrícula e Cadastro enviados com sucesso ao Firestore e Diretoria!");
       
       const message = `Olá, gostaria de fazer parte da Comunidade do Começo ao Topo como *${selectedPlan}*! Meu nome é ${contactName} e atuo no segmento de ${businessSector || 'Empreendedorismo'}.`;
       const encodedMsg = encodeURIComponent(message);
-      window.open(`https://wa.me/5532991947690?text=${encodedMsg}`, "_blank");
+      window.open(`https://wa.me/5532984124860?text=${encodedMsg}`, "_blank");
       
       setSelectedPlan(null);
       setContactName("");

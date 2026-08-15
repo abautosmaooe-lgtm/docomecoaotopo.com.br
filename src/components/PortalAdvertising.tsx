@@ -179,7 +179,7 @@ export default function PortalAdvertising({ isDarkMode, isAdmin = false }: Porta
           }
         }
       })
-      .catch((e) => console.error("Error loading advertising data from database:", e));
+      .catch(() => {});
   }, []);
 
   const handleToggleCollapse = () => {

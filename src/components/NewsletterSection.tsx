@@ -18,7 +18,7 @@ const CATEGORIES_TO_CHOOSE: CategoryType[] = [
   "CURSOS",
 ];
 
-const WHATSAPP_LINK = "https://wa.me/5532991947690?text=Ol%C3%A1!%20Quero%20receber%20as%20novidades%20da%20regi%C3%A3o%20no%20meu%20WhatsApp";
+const WHATSAPP_LINK = "https://wa.me/5532984124860?text=Ol%C3%A1!%20Quero%20receber%20as%20novidades%20da%20regi%C3%A3o%20no%20meu%20WhatsApp";
 
 export default function NewsletterSection({
   onAddSubscriber,

@@ -328,7 +328,7 @@ export const TopinaAssistant: React.FC<{ isCollapsed?: boolean }> = ({ isCollaps
     }
   ]);
 
-  const whatsappUrl = "https://api.whatsapp.com/send/?phone=553291947690&text=Ol%C3%A1%2C%20gostaria%20de%20informa%C3%A7%C3%B5es%20sobre%20o%20Portal%20Do%20Come%C3%A7o%20ao%20Topo!&type=phone_number&app_absent=0";
+  const whatsappUrl = "https://api.whatsapp.com/send/?phone=5532984124860&text=Ol%C3%A1%2C%20gostaria%20de%20informa%C3%A7%C3%B5es%20sobre%20o%20Portal%20Do%20Come%C3%A7o%20ao%20Topo!&type=phone_number&app_absent=0";
   const [isLoading, setIsLoading] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 

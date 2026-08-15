@@ -297,7 +297,7 @@ export default function RotatingBannerAds({ isDarkMode, isAdmin = false }: Rotat
           setAds(data.rotating_ads);
         }
       })
-      .catch((err) => console.error("Error loading rotating ads from database:", err));
+      .catch(() => {});
   }, []);
 
   // Initialize SpeechSynthesis reference

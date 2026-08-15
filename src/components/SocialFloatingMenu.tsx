@@ -43,10 +43,10 @@ export default function SocialFloatingMenu({
     {
       name: "WhatsApp",
       icon: MessageCircle,
-      url: "https://wa.me/553291947690",
+      url: "https://wa.me/5532984124860",
       color: "bg-[#25D366] hover:bg-[#20ba56]",
       glowColor: "rgba(37, 211, 102, 0.4)",
-      label: "+55 32 9194-7690",
+      label: "+55 32 98412-4860",
       subtitle: "Fale com a Redação",
       soundFreq: 850,
     },

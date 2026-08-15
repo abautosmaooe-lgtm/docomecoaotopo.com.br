@@ -86,6 +86,41 @@ export default function HeroVideoSlider({ isDarkMode, onCtaClick, onSelectCatego
       statNumber2: "Networking",
       statLabel2: "Polo de Inovação",
       categoryLink: undefined,
+    },
+    {
+      id: "palestra-flavia-reis",
+      tag: "Palestra Online • 12/09",
+      starText: "Vagas Limitadas",
+      title: "REFORMA TRIBUTÁRIA COM FLÁVIA REIS",
+      description: "Entenda o presente. Antecipe o futuro. Um panorama completo sobre as transformações fiscais e os impactos para empresas com a especialista Flávia Reis (9h às 12h, R$ 30,00).",
+      ctaText: "INSCREVER VIA WHATSAPP (32) 99110-9437",
+      ctaLink: "https://wa.me/553291109437?text=Ol%C3%A1%20Fl%C3%A1via!%20Vi%20a%20divulga%C3%A7%C3%A3o%20no%20Portal%20Do%20Come%C3%A7o%20ao%20Topo%20e%20gostaria%20de%20garantir%20minha%20inscri%C3%A7%C3%A3o%20na%20Palestra%20Reforma%20Tribut%C3%A1ria.",
+      isExternal: true,
+      bgType: "image",
+      bgUrl: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1280",
+      statNumber: "R$ 30,00",
+      statLabel: "Investimento",
+      statNumber2: "12/09 • 9h",
+      statLabel2: "Online 3h",
+      categoryLink: undefined,
+    },
+    {
+      id: "unicornsummit",
+      tag: "Inovação & Startups",
+      starText: "Encontro Internacional",
+      title: "UNICORN SUMMIT SOUTH AMERICA 2026",
+      description: "Juiz de Fora será palco, de 30 de agosto a 2 de setembro, do encontro internacional que conecta líderes globais, investidores e pesquisadores para acelerar os próximos unicórnios.",
+      ctaText: "SAIBA MAIS & INSCREVA-SE",
+      ctaLink: "https://sa.unicornsummit.net/?utm_source=chatgpt.com",
+      isExternal: true,
+      bgType: "video",
+      videoUrl: "https://media.w3.org/2010/05/sintel/trailer.mp4",
+      bgUrl: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1280",
+      statNumber: "30 Ago - 02 Set",
+      statLabel: "Juiz de Fora",
+      statNumber2: "Global",
+      statLabel2: "Next Unicorns",
+      categoryLink: undefined,
     }
   ];
 
@@ -366,7 +401,11 @@ export default function HeroVideoSlider({ isDarkMode, onCtaClick, onSelectCatego
                     }}
                     className="px-6 py-4 bg-[#22c55e] hover:bg-[#1ebd52] text-black font-mono font-black text-xs uppercase tracking-widest rounded-xl flex items-center justify-center gap-2.5 hover:scale-[1.03] active:scale-[0.98] transition-all duration-300 shadow-[0_0_30px_rgba(34,197,94,0.4)]"
                   >
-                    <Youtube className="w-5 h-5 fill-current shrink-0" />
+                    {activeSlides[currentSlide].ctaLink?.includes("youtube") ? (
+                      <Youtube className="w-5 h-5 fill-current shrink-0" />
+                    ) : (
+                      <ExternalLink className="w-4 h-4 shrink-0 stroke-[2.5]" />
+                    )}
                     <span>{activeSlides[currentSlide].ctaText}</span>
                   </a>
                 ) : (

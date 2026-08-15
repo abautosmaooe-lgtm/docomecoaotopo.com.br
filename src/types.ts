@@ -34,7 +34,7 @@ export interface AnalyticsMetric {
 
 export type CategoryType = "PODCAST" | "COMUNIDADE" | "EMBAIXADORES" | "TOUR" | "NOTÍCIAS" | "EVENTOS" | "VAGA DE EMPREGOS" | "PARCEIROS" | "CURSOS";
 export type CardLayoutType = 'list' | 'grid' | 'compact';
-export type UserStatusType = "approved" | "trial" | "suspended";
+export type UserStatusType = "approved" | "trial" | "suspended" | "pending";
 
 export interface AppUser {
   email: string;

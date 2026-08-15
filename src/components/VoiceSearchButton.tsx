@@ -65,23 +65,26 @@ export default function VoiceSearchButton({ onSearch, isDarkMode }: VoiceSearchB
       triggerBeep(600);
 
       const rec = new SpeechRecognition();
-      rec.continuous = true;
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      rec.continuous = !isMobile; // Mobile browsers work much better with continuous=false
       rec.interimResults = true;
+      rec.maxAlternatives = 1;
       rec.lang = "pt-BR";
 
       rec.onstart = () => {
         setIsListening(true);
-        // Automatically stop listening if silence persists for 10 seconds
         resetTimeout();
       };
 
       rec.onerror = (e: any) => {
         console.error("Speech Recognition Error:", e);
-        if (e.error === "not-allowed") {
-          setErrorMsg("Permissão de microfone negada. Ative o acesso nas configurações do seu navegador.");
+        if (e.error === "not-allowed" || e.error === "permission-denied") {
+          setErrorMsg("Permissão de microfone negada. Toque no cadeado ao lado do endereço e permita o microfone.");
         } else if (e.error === "no-speech") {
-          setErrorMsg("Nenhuma voz foi detectada. Tente falar um pouco mais alto ou ajuste seu microfone.");
-        } else {
+          // Soft ignore silence on mobile instead of crashing
+        } else if (e.error === "network") {
+          setErrorMsg("Verifique sua conexão com a internet para usar o reconhecimento de voz.");
+        } else if (e.error !== "aborted") {
           setErrorMsg("Ocorreu um erro ao ouvir: " + e.error);
         }
         playNegativeSound();
@@ -99,8 +102,10 @@ export default function VoiceSearchButton({ onSearch, isDarkMode }: VoiceSearchB
           currentTranscript += event.results[i][0].transcript;
         }
 
-        setTranscript(currentTranscript);
-        parseAndSearch(currentTranscript);
+        if (currentTranscript.trim()) {
+          setTranscript(currentTranscript);
+          parseAndSearch(currentTranscript);
+        }
       };
 
       recognitionRef.current = rec;
@@ -149,32 +154,51 @@ export default function VoiceSearchButton({ onSearch, isDarkMode }: VoiceSearchB
       "topina pesquisar por",
       "topina, procure por",
       "topina procure por",
+      "topina, pesquise",
+      "topina pesquise",
+      "topina, buscar",
+      "topina buscar",
+      "topina, busca",
+      "topina busca",
+      "topina",
       "buscar por",
       "busca por",
+      "busque por",
       "pesquisar por",
-      "procurar por"
+      "pesquise por",
+      "procurar por",
+      "procure por",
+      "buscar",
+      "pesquisar",
+      "procurar"
     ];
 
+    let query = "";
     for (const prefix of triggers) {
       const idx = rawText.indexOf(prefix);
       if (idx !== -1) {
-        // Find the search phrase starting right after the prefix trigger
         const extracted = text.substring(idx + prefix.length).trim();
-        // Extract query and clean trailing punctuation like dots or question marks
-        const query = extracted.replace(/[.?]$/, "").trim();
-        if (query.length > 0) {
-          setDetectedQuery(query);
-          
-          // Trigger successful search immediately
-          triggerBeep(900);
-          setTimeout(() => {
-            playSuccessSound();
-            onSearch(query);
-            handleStopListening();
-          }, 800);
+        const cleaned = extracted.replace(/^[ ,:;-]+/, "").replace(/[.?]$/, "").trim();
+        if (cleaned.length > 0) {
+          query = cleaned;
           break;
         }
       }
+    }
+
+    // If user spoke any clear phrase without specific keywords, treat full spoken text as search query directly
+    if (!query && text.trim().length >= 2) {
+      query = text.trim().replace(/[.?]$/, "").trim();
+    }
+
+    if (query.length > 0) {
+      setDetectedQuery(query);
+      triggerBeep(900);
+      setTimeout(() => {
+        playSuccessSound();
+        onSearch(query);
+        handleStopListening();
+      }, 700);
     }
   };
 

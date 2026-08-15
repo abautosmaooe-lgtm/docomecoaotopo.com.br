@@ -22,7 +22,6 @@ const MENU_ITEMS = [
   { label: "QUEM SOMOS", action: "section", sectionId: "QUEM SOMOS", isCategory: true, cat: "QUEM SOMOS" },
   { label: "OBJETIVOS", action: "section", sectionId: "OBJETIVOS" },
   { label: "ONDE ESTAMOS", action: "section", sectionId: "ONDE ESTAMOS" },
-  { label: "CURSOS", action: "category", cat: "CURSOS" },
   { label: "NOTÍCIAS", action: "category", cat: "NOTÍCIAS" },
   { label: "CONTATO", action: "section", sectionId: "CONTATO" },
   { label: "PARCEIROS", action: "section", sectionId: "PARCEIROS" },

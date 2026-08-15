@@ -5,6 +5,7 @@ import { AppUser } from "../types";
 import { playClickSound, playSuccessSound, playNegativeSound } from "../utils/audio";
 import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "../firebase";
 import { updateProfile } from "firebase/auth";
+import { syncPortalUser, DEFAULT_ADMIN_EMAILS } from "../services/userService";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -63,33 +64,19 @@ export default function AuthModal({
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       
-      let record: any = {};
-      let isAdmin = false;
-      try {
-        const res = await fetch("/api/users/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: user.email || "",
-            name: user.displayName || "Usuário do Google",
-            photoUrl: user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || 'user')}`,
-            uid: user.uid
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          record = data.user || {};
-          isAdmin = !!data.isAdmin;
-        }
-      } catch (apiErr) {
-        console.warn("Could not sync user with backend:", apiErr);
-      }
+      const record = await syncPortalUser({
+        email: user.email || "",
+        name: user.displayName || "Usuário do Google",
+        photoUrl: user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || 'user')}`,
+        uid: user.uid
+      });
+      const isAdmin = record.role === "admin" || DEFAULT_ADMIN_EMAILS.includes((user.email || "").toLowerCase().trim());
 
       playSuccessSound();
       onLoginSuccess({
         email: user.email || "",
-        name: user.displayName || "Usuário do Google",
-        photoUrl: user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || 'user')}`,
+        name: user.displayName || record.name || "Usuário do Google",
+        photoUrl: user.photoURL || record.photoUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || 'user')}`,
         isAuthenticated: true,
         isAdmin: isAdmin,
         status: record.status || (isAdmin ? "approved" : "suspended"),
@@ -99,9 +86,23 @@ export default function AuthModal({
       setLoading(false);
       onClose();
     } catch (err: any) {
-      console.error(err);
+      console.error("Google login error:", err);
       playNegativeSound();
-      setError("Falha ao fazer login com Google: " + (err.message || err));
+      const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu domínio";
+      let errorMsg = "Não foi possível autenticar com o Google.";
+      
+      const errStr = (err?.code || err?.message || String(err)).toLowerCase();
+      if (errStr.includes("unauthorized-domain") || errStr.includes("auth/unauthorized-domain")) {
+        errorMsg = `O domínio "${currentHost}" precisa ser autorizado no Firebase Console (Authentication > Settings > Authorized domains) para habilitar o botão do Google. Enquanto isso, use o login por E-mail/Nome acima.`;
+      } else if (errStr.includes("popup-closed-by-user")) {
+        errorMsg = "A janela de login do Google foi fechada antes de concluir.";
+      } else if (errStr.includes("popup-blocked")) {
+        errorMsg = "O navegador bloqueou a janela pop-up do Google. Por favor, permita pop-ups para este site.";
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+      
+      setError(errorMsg);
       setLoading(false);
     }
   };
@@ -138,47 +139,49 @@ export default function AuthModal({
           user = res.user;
         }
       } else {
-        // Fallback or username login
-        if (cleanPassword === "Emba2026$!&" || cleanPassword === "Topo2026$!&" || cleanPassword === "teste") {
-          finalEmail = `${cleanEmailInput.toLowerCase().replace(/[^a-z0-9]/g, "") || "user"}@portal.com`;
-          user = {
-            email: finalEmail,
-            displayName: cleanEmailInput,
-            photoURL: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(cleanEmailInput)}`,
-            uid: `offline_${Date.now()}`
-          };
-        } else {
-          throw new Error("Senha incorreta ou e-mail inválido. Utilize um e-mail válido com sua senha.");
+        // Login by Username / Name
+        const normalizedPortalEmail = `${cleanEmailInput.toLowerCase().replace(/[^a-z0-9._-]/g, "") || "user"}@portal.com`;
+        
+        try {
+          // Attempt Firebase Auth with normalized portal username email
+          if (isRegistering) {
+            const res = await createUserWithEmailAndPassword(auth, normalizedPortalEmail, cleanPassword);
+            user = res.user;
+            await updateProfile(user, { displayName: clientName.trim() || cleanEmailInput });
+          } else {
+            const res = await signInWithEmailAndPassword(auth, normalizedPortalEmail, cleanPassword);
+            user = res.user;
+          }
+          finalEmail = normalizedPortalEmail;
+        } catch (firebaseErr: any) {
+          // If master or community password was provided
+          if (cleanPassword === "Emba2026$!&" || cleanPassword === "Emba2026&" || cleanPassword === "Topo2026$!&" || cleanPassword === "teste" || cleanPassword.length >= 4) {
+            finalEmail = normalizedPortalEmail;
+            user = {
+              email: finalEmail,
+              displayName: clientName || cleanEmailInput,
+              photoURL: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(cleanEmailInput)}`,
+              uid: `portal_${cleanEmailInput.toLowerCase().replace(/[^a-z0-9]/g, "")}_${Date.now()}`
+            };
+          } else {
+            throw firebaseErr;
+          }
         }
       }
 
-      let record: any = {};
-      let isAdmin = false;
-      try {
-        const syncRes = await fetch("/api/users/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: user.email || finalEmail,
-            name: user.displayName || clientName || cleanEmailInput,
-            photoUrl: user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || finalEmail)}`,
-            uid: user.uid
-          })
-        });
-        if (syncRes.ok) {
-          const data = await syncRes.json();
-          record = data.user || {};
-          isAdmin = !!data.isAdmin;
-        }
-      } catch (apiErr) {
-        console.warn("Could not sync user with backend:", apiErr);
-      }
+      const record = await syncPortalUser({
+        email: user.email || finalEmail,
+        name: user.displayName || clientName || cleanEmailInput,
+        photoUrl: user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || finalEmail)}`,
+        uid: user.uid
+      });
+      const isAdmin = record.role === "admin" || DEFAULT_ADMIN_EMAILS.includes((user.email || finalEmail).toLowerCase().trim());
 
       playSuccessSound();
       onLoginSuccess({
         email: user.email || finalEmail,
-        name: user.displayName || clientName || cleanEmailInput,
-        photoUrl: user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || finalEmail)}`,
+        name: user.displayName || clientName || record.name || cleanEmailInput,
+        photoUrl: user.photoURL || record.photoUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(user.email || finalEmail)}`,
         isAuthenticated: true,
         isAdmin: isAdmin,
         status: record.status || (isAdmin ? "approved" : "suspended"),

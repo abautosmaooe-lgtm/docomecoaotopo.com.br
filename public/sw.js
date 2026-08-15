@@ -1,24 +1,11 @@
-const CACHE_NAME = "comeco-ao-topo-v1";
-const ASSETS = [
-  "/",
-  "/index.html",
-  "/public/manifest.json",
-  "/favicon.svg"
-];
+const CACHE_NAME = "comeco-ao-topo-v2";
 
 // Install Service Worker
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS).catch((err) => {
-        console.warn("Pre-caching assets warning during installation:", err);
-      });
-    })
-  );
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
-// Activate Service Worker
+// Activate Service Worker & clear old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -34,28 +21,38 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch Interceptor
+// Fetch Interceptor: Network-first strategy for static production assets
 self.addEventListener("fetch", (event) => {
-  // Only intercept same-origin HTTP/HTTPS requests to avoid security errors with external APIs
-  if (event.request.url.startsWith(self.location.origin) && event.request.method === "GET") {
-    event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then((networkResponse) => {
-          // If response is valid, clone and cache it
-          if (networkResponse && networkResponse.status === 200 && networkResponse.type === "basic") {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return networkResponse;
-        }).catch(() => {
-          // Fallback offline experience if wanted
-        });
-      })
-    );
+  const url = event.request.url;
+  // Never intercept API routes, non-GET requests, or Vite dev files
+  if (
+    !url.startsWith(self.location.origin) ||
+    event.request.method !== "GET" ||
+    url.includes("/api/") ||
+    url.includes("/src/") ||
+    url.includes("/@vite") ||
+    url.includes("/@fs") ||
+    url.includes("/node_modules/") ||
+    url.endsWith(".tsx") ||
+    url.endsWith(".ts") ||
+    url.endsWith(".jsx")
+  ) {
+    return;
   }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === "basic") {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
+  );
 });

@@ -86,15 +86,16 @@ export default function BreakingNewsTicker({ isDarkMode }: BreakingNewsTickerPro
       try {
         setIsLoading(true);
         const res = await fetch("/api/google-news");
-        if (!res.ok) throw new Error("Failed to fetch Google News");
-        const data = await res.json();
-        if (data && Array.isArray(data.items) && data.items.length > 0) {
-          if (active) {
-            setHeadlines(data.items);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.items) && data.items.length > 0) {
+            if (active) {
+              setHeadlines(data.items);
+            }
           }
         }
-      } catch (err) {
-        console.error("Could not fetch live google news, using fallback local headlines:", err);
+      } catch {
+        // Fallback local headlines are already used by default in state
       } finally {
         if (active) {
           setIsLoading(false);

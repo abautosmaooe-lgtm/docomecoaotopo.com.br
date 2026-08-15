@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { ScanFace, Camera, CameraOff, X, Check, Play, Pause, RefreshCw, Sparkles, Navigation, Target, Sliders, Eye } from "lucide-react";
+import { motion, AnimatePresence, useDragControls } from "motion/react";
+import { 
+  ScanFace, Camera, CameraOff, X, Check, Play, Pause, 
+  RefreshCw, Sparkles, Navigation, Target, Sliders, Eye, 
+  Move, Minimize2, Maximize2
+} from "lucide-react";
 import { playClickSound } from "../utils/audio";
 
 interface FaceNavigationSystemProps {
@@ -15,6 +19,7 @@ export default function FaceNavigationSystem({
   onActivationChange,
 }: FaceNavigationSystemProps) {
   const [isActive, setIsActive] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [isCountingDown, setIsCountingDown] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<"prompt" | "granted" | "denied">("prompt");
@@ -27,6 +32,9 @@ export default function FaceNavigationSystem({
   const [headDirection, setHeadDirection] = useState<"center" | "up" | "down" | "left" | "right">("center");
   const [hoverProgress, setHoverProgress] = useState(0);
   const [hoveredElement, setHoveredElement] = useState<HTMLElement | null>(null);
+
+  const dragControls = useDragControls();
+  const hudConstraintsRef = useRef<HTMLDivElement | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -335,101 +343,165 @@ export default function FaceNavigationSystem({
         </div>
       )}
 
-      {/* 3. FLOATING HUD WIDGET (Active Mode) */}
+      {/* Global constraint container for dragging HUD */}
+      <div ref={hudConstraintsRef} className="fixed inset-4 pointer-events-none z-[9980]" />
+
+      {/* 3. FLOATING HUD WIDGET (Active Mode with PiP Draggable Capabilities) */}
       {isActive && (
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="fixed bottom-6 left-6 z-[9990] bg-zinc-950/90 border-2 border-emerald-500/40 text-white rounded-2xl p-3 shadow-2xl backdrop-blur-md w-72 space-y-3"
+          drag
+          dragControls={dragControls}
+          dragListener={false} // Only dragged by top handle bar to not interfere with sliders/buttons
+          dragConstraints={hudConstraintsRef}
+          dragElastic={0.08}
+          dragMomentum={false}
+          initial={{ opacity: 0, y: 30, scale: 0.9 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          className={`fixed bottom-6 left-6 z-[9990] pointer-events-auto bg-zinc-950/95 border-2 border-emerald-500/50 text-white rounded-2xl p-3 shadow-2xl backdrop-blur-xl transition-[width,height] duration-200 select-none ${
+            isMinimized ? "w-64 space-y-0" : "w-72 sm:w-80 space-y-3"
+          }`}
         >
-          {/* HUD Header */}
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+          {/* HUD Draggable Header */}
+          <div
+            onPointerDown={(e) => dragControls.start(e)}
+            className="flex items-center justify-between border-b border-zinc-800/80 pb-2 cursor-grab active:cursor-grabbing hover:bg-zinc-900/40 p-1 -m-1 rounded-t-xl transition"
+            title="Arraste para mover o painel de face para qualquer canto da tela"
+          >
             <div className="flex items-center gap-2">
-              <ScanFace className="w-4 h-4 text-emerald-400 animate-pulse" />
-              <span className="font-display font-black text-xs uppercase tracking-wider text-emerald-400">
-                Navegação por Face
-              </span>
+              <div className="p-1 rounded bg-emerald-500/20 text-emerald-400">
+                <ScanFace className="w-3.5 h-3.5 animate-pulse" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-display font-black text-xs uppercase tracking-wider text-emerald-400 leading-tight">
+                  Navegação por Face
+                </span>
+                <span className="text-[8px] font-mono text-zinc-400">
+                  Arraste ↔ para reposicionar
+                </span>
+              </div>
             </div>
-            <button
-              onClick={handleStopNavigation}
-              className="p-1 text-zinc-400 hover:text-red-400 hover:bg-zinc-900 rounded-lg transition"
-              title="Encerrar Navegação por Face"
-            >
-              <X className="w-4 h-4" />
-            </button>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1">
+              <div className="p-1 text-zinc-500 hover:text-zinc-300 transition" title="Arraste para mover">
+                <Move className="w-3.5 h-3.5" />
+              </div>
+
+              {/* Minimize / Expand Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound(600, "sine");
+                  setIsMinimized(!isMinimized);
+                }}
+                className="p-1 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-900 rounded-lg transition"
+                title={isMinimized ? "Expandir Câmera & Controles" : "Minimizar Câmera (PiP Compacto)"}
+              >
+                {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleStopNavigation}
+                className="p-1 text-zinc-400 hover:text-red-400 hover:bg-zinc-900 rounded-lg transition"
+                title="Encerrar Navegação por Face"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          {/* Camera preview box / gesture pad */}
-          <div className="relative h-28 bg-black rounded-xl overflow-hidden border border-zinc-800 flex items-center justify-center">
-            <video
-              ref={videoRef}
-              className={`w-full h-full object-cover transform -scale-x-100 ${useCamera && cameraPermission === "granted" ? "block" : "hidden"}`}
-              playsInline
-              muted
-            />
-            <canvas ref={canvasRef} className="hidden" />
+          {!isMinimized && (
+            <>
+              {/* Camera preview box / gesture pad */}
+              <div className="relative h-28 bg-black rounded-xl overflow-hidden border border-zinc-800 flex items-center justify-center">
+                <video
+                  ref={videoRef}
+                  className={`w-full h-full object-cover transform -scale-x-100 ${useCamera && cameraPermission === "granted" ? "block" : "hidden"}`}
+                  playsInline
+                  muted
+                />
+                <canvas ref={canvasRef} className="hidden" />
 
-            {/* Simulated Gesture Pad if Camera Off or Permission Denied */}
-            {(!useCamera || cameraPermission !== "granted") && (
-              <div className="flex flex-col items-center justify-center gap-1.5 p-2 text-center">
-                <span className="text-[10px] font-mono text-zinc-400">
-                  Controle Gestual de Cabeça Ativo
-                </span>
-                <div className="grid grid-cols-3 gap-1 w-28">
-                  <div />
-                  <button onClick={() => nudgeCursor("up")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">⬆️</button>
-                  <div />
-                  <button onClick={() => nudgeCursor("left")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">⬅️</button>
-                  <button onClick={() => setHeadDirection("center")} className="p-1 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono text-emerald-400 rounded text-center font-bold">FAÇA</button>
-                  <button onClick={() => nudgeCursor("right")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">➡️</button>
-                  <div />
-                  <button onClick={() => nudgeCursor("down")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">⬇️</button>
-                  <div />
+                {/* Simulated Gesture Pad if Camera Off or Permission Denied */}
+                {(!useCamera || cameraPermission !== "granted") && (
+                  <div className="flex flex-col items-center justify-center gap-1.5 p-2 text-center">
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      Controle Gestual de Cabeça Ativo
+                    </span>
+                    <div className="grid grid-cols-3 gap-1 w-28">
+                      <div />
+                      <button onClick={() => nudgeCursor("up")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">⬆️</button>
+                      <div />
+                      <button onClick={() => nudgeCursor("left")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">⬅️</button>
+                      <button onClick={() => setHeadDirection("center")} className="p-1 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono text-emerald-400 rounded text-center font-bold">FAÇA</button>
+                      <button onClick={() => nudgeCursor("right")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">➡️</button>
+                      <div />
+                      <button onClick={() => nudgeCursor("down")} className="p-1 bg-zinc-900 hover:bg-emerald-500/20 border border-zinc-800 hover:border-emerald-500/40 text-xs rounded text-center">⬇️</button>
+                      <div />
+                    </div>
+                  </div>
+                )}
+
+                {/* Crosshair Overlay */}
+                <div className="absolute inset-0 border border-[#22c55e]/20 pointer-events-none flex items-center justify-center">
+                  <div className="w-12 h-12 border border-emerald-400/40 rounded-full animate-ping opacity-20" />
                 </div>
               </div>
-            )}
 
-            {/* Crosshair Overlay */}
-            <div className="absolute inset-0 border border-[#22c55e]/20 pointer-events-none flex items-center justify-center">
-              <div className="w-12 h-12 border border-emerald-400/40 rounded-full animate-ping opacity-20" />
+              {/* Controls & Sensitivity */}
+              <div className="space-y-2 text-[10px] font-mono">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Sensibilidade do Rosto:</span>
+                  <span className="text-emerald-400 font-bold">{sensitivity}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={sensitivity}
+                  onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+                  className="w-full accent-emerald-500 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                />
+
+                <div className="flex items-center justify-between pt-1 text-[9px] text-zinc-500">
+                  <span>Clique por Tempo de Espera:</span>
+                  <span className="text-pink-400 font-bold">2.0s</span>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div className="pt-2 border-t border-zinc-900 flex items-center justify-between text-[9px] font-mono">
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  Rastreamento Ativo
+                </span>
+                <button
+                  onClick={handleStopNavigation}
+                  className="text-red-400 hover:underline uppercase font-bold"
+                >
+                  Pausar / Parar
+                </button>
+              </div>
+            </>
+          )}
+
+          {isMinimized && (
+            <div className="pt-2 flex items-center justify-between text-[9px] font-mono text-zinc-400">
+              <span className="text-emerald-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Rastreando em segundo plano
+              </span>
+              <button
+                onClick={() => setIsMinimized(false)}
+                className="text-pink-400 hover:underline uppercase font-bold"
+              >
+                Expandir
+              </button>
             </div>
-          </div>
-
-          {/* Controls & Sensitivity */}
-          <div className="space-y-2 text-[10px] font-mono">
-            <div className="flex items-center justify-between text-zinc-400">
-              <span>Sensibilidade do Rosto:</span>
-              <span className="text-emerald-400 font-bold">{sensitivity}x</span>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="3"
-              step="0.1"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(parseFloat(e.target.value))}
-              className="w-full accent-emerald-500 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
-            />
-
-            <div className="flex items-center justify-between pt-1 text-[9px] text-zinc-500">
-              <span>Clique por Tempo de Espera:</span>
-              <span className="text-pink-400 font-bold">2.0s</span>
-            </div>
-          </div>
-
-          {/* Status Badge */}
-          <div className="pt-2 border-t border-zinc-900 flex items-center justify-between text-[9px] font-mono">
-            <span className="text-emerald-400 flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              Rastreamento Ativo
-            </span>
-            <button
-              onClick={handleStopNavigation}
-              className="text-red-400 hover:underline uppercase font-bold"
-            >
-              Pausar / Parar
-            </button>
-          </div>
+          )}
         </motion.div>
       )}
     </>

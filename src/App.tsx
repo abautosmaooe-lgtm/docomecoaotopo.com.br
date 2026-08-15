@@ -84,7 +84,10 @@ import CommunityMembership from "./components/CommunityMembership";
 import PortalAdvertising from "./components/PortalAdvertising";
 import PwaInstallButton from "./components/PwaInstallButton";
 import FaceNavigationSystem from "./components/FaceNavigationSystem";
+import PodcastPipPlayer, { PipVideoData } from "./components/PodcastPipPlayer";
 import AgendaCalendar from "./components/AgendaCalendar";
+import UpcomingEventsSection from "./components/UpcomingEventsSection";
+import MonthlyHighlightsSection from "./components/MonthlyHighlightsSection";
 import PartnersCarousel from "./components/PartnersCarousel";
 import { playClickSound, playSuccessSound, playNegativeSound, isSoundEnabled, setSoundEnabled } from "./utils/audio";
 import { TopinaAssistant } from "./components/TopinaAssistant";
@@ -123,6 +126,26 @@ export default function App() {
   const [showWelcomePopup, setShowWelcomePopup] = useState(true);
   const [showEventPopup, setShowEventPopup] = useState(true);
   const [showRodadaPopup, setShowRodadaPopup] = useState(false);
+
+  React.useEffect(() => {
+    // Proactively clean up oversized base64 values from localStorage to prevent QuotaExceededError
+    try {
+      const keysToClean = [
+        "app_highlight_photo_unicorn",
+        "app_highlight_photo_jfsummit",
+        "app_upcoming_event_speaker_photo"
+      ];
+      keysToClean.forEach(key => {
+        const val = localStorage.getItem(key);
+        if (val && val.startsWith("data:image/")) {
+          // Stale huge base64 in localStorage that causes browser quota failure -> purge it
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.warn("Storage auto-cleanup:", e);
+    }
+  }, []);
 
   React.useEffect(() => {
     const handleHash = () => {
@@ -242,6 +265,7 @@ export default function App() {
   const isDirectEditingEnabled = (activeTab as string) === "editor" || (user.isAuthenticated && user.isAdmin);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isFaceNavOpen, setIsFaceNavOpen] = useState(false);
+  const [pipVideo, setPipVideo] = useState<PipVideoData | null>(null);
   const [authModalTab, setAuthModalTab] = useState<"client" | "admin">("client");
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [pendingCategory, setPendingCategory] = useState<CategoryType | null>(null);
@@ -388,12 +412,27 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<string | null>(null);
 
   // Quem Somos custom upload states
+  const DEFAULT_QUEM_SOMOS_GALLERY = [
+    { id: "qsg-1", url: "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80", caption: "Encontro Estratégico com Líderes" },
+    { id: "qsg-2", url: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&w=800&q=80", caption: "Gravação no Estúdio do Podcast" },
+    { id: "qsg-3", url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=800&q=80", caption: "Painel de Conexões e Negócios" }
+  ];
+
   const [quemSomosProfilePic, setQuemSomosProfilePic] = useState<string>(() => {
-    return localStorage.getItem("quem_somos_profile_pic") || "/regina-profile.jpg";
+    const saved = localStorage.getItem("quem_somos_profile_pic") || localStorage.getItem("quem-somos-profile-regina_uploaded_src");
+    return (saved && saved.trim() !== "" && saved !== "undefined" && saved !== "null") ? saved : "/regina-profile.jpg";
   });
   const [quemSomosGallery, setQuemSomosGallery] = useState<{ id: string; url: string; caption: string }[]>(() => {
     const saved = localStorage.getItem("quem_somos_gallery");
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return DEFAULT_QUEM_SOMOS_GALLERY;
   });
 
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -404,9 +443,6 @@ export default function App() {
   const [tempInstaText, setTempInstaText] = useState("");
 
   // Load official ambassadors state for Showcase rendering in Quem Somos
-
-
-
   const [quemSomosAmbassadors, setQuemSomosAmbassadors] = useState<OfficialAmbassador[]>(() => {
     const saved = localStorage.getItem("embaixadores_list");
     let baseList = OFFICIAL_AMBASSADORS;
@@ -436,16 +472,16 @@ export default function App() {
         
         // Clean and heal value
         let currentPhoto = localPhoto;
-        if (!currentPhoto || currentPhoto === "undefined" || currentPhoto === "null") {
+        if (!currentPhoto || currentPhoto.trim() === "" || currentPhoto === "undefined" || currentPhoto === "null") {
           currentPhoto = a.photoUrl;
         }
-        if (!currentPhoto || currentPhoto === "undefined" || currentPhoto === "null") {
+        if (!currentPhoto || currentPhoto.trim() === "" || currentPhoto === "undefined" || currentPhoto === "null") {
           currentPhoto = defaultAmb?.photoUrl;
         }
         if (currentPhoto && currentPhoto.startsWith("data:image/")) {
           currentPhoto = defaultAmb?.photoUrl;
         }
-        if (!currentPhoto || currentPhoto === "undefined" || currentPhoto === "null") {
+        if (!currentPhoto || currentPhoto.trim() === "" || currentPhoto === "undefined" || currentPhoto === "null") {
           currentPhoto = defaultAmb?.photoUrl || "";
         }
         return { 
@@ -499,7 +535,7 @@ export default function App() {
             enderecoMapViewer: parsed.enderecoMapViewer || "https://maps.google.com/?q=Rua+Ataliba+de+Barros,+182+Juiz+de+Fora",
             
             contatoEmail: parsed.contatoEmail || "contato@docomecoaotopo.com.br",
-            contatoWhatsapp: parsed.contatoWhatsapp || "+55 (32) 99999-9999",
+            contatoWhatsapp: (!parsed.contatoWhatsapp || parsed.contatoWhatsapp.includes("9999")) ? "+55 (32) 98412-4860" : parsed.contatoWhatsapp,
             contatoInstagram: parsed.contatoInstagram || "https://instagram.com/podcastdocomecoaotopo",
             
             parceirosList: parsed.parceirosList || [
@@ -572,7 +608,7 @@ export default function App() {
       enderecoMapViewer: "https://maps.google.com/?q=Rua+Ataliba+de+Barros,+182+Juiz+de+Fora",
       
       contatoEmail: "contato@docomecoaotopo.com.br",
-      contatoWhatsapp: "+55 (32) 99999-9999",
+      contatoWhatsapp: "+55 (32) 98412-4860",
       contatoInstagram: "https://instagram.com/podcastdocomecoaotopo",
       
       parceirosList: [
@@ -671,6 +707,29 @@ export default function App() {
         }
       }
 
+      // Collect all photos from all local galleries
+      const allPhotosList: any[] = [];
+      const seenPhotoIds = new Set<string>();
+      const addPhotoSafe = (p: any) => {
+        if (!p || !p.url) return;
+        const id = String(p.id || `photo-${Date.now()}-${Math.random()}`);
+        if (!seenPhotoIds.has(id)) {
+          seenPhotoIds.add(id);
+          allPhotosList.push({ ...p, id });
+        }
+      };
+
+      try {
+        const gPhotos = localStorage.getItem("global_photo_gallery");
+        if (gPhotos) JSON.parse(gPhotos).forEach(addPhotoSafe);
+        const ePhotos = localStorage.getItem("embaixadores_photos_db");
+        if (ePhotos) JSON.parse(ePhotos).forEach(addPhotoSafe);
+        const cPhotos = localStorage.getItem("comunidade_photos_db");
+        if (cPhotos) JSON.parse(cPhotos).forEach(addPhotoSafe);
+      } catch (e) {
+        console.warn("Could not parse local photo galleries", e);
+      }
+
       const embaixadores_list = quemSomosAmbassadors.map((a, idx) => {
         const key = `ambassador-pic-${idx}-${a.name}_uploaded_src`;
         const uploadedSrc = localStorage.getItem(key);
@@ -683,6 +742,12 @@ export default function App() {
       const podcastsJson = localStorage.getItem("docomeco_podcasts_v2");
       const podcasts = podcastsJson ? JSON.parse(podcastsJson) : undefined;
 
+      const testimonialsJson = localStorage.getItem("docomeco_testimonials");
+      const testimonials = testimonialsJson ? JSON.parse(testimonialsJson) : undefined;
+
+      const quemSomosGalleryJson = localStorage.getItem("quem_somos_gallery");
+      const qGallery = quemSomosGalleryJson ? JSON.parse(quemSomosGalleryJson) : quemSomosGallery;
+
       const response = await fetch("/api/publish-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -692,10 +757,13 @@ export default function App() {
           gradientStyle,
           footerCredits,
           quem_somos_profile_pic: quemSomosProfilePic,
+          quem_somos_gallery: qGallery,
+          photos: allPhotosList,
           positionableImages,
           embaixadores_list,
           podcasts,
           articles,
+          testimonials,
           homepage_sections_order: homepageSectionsOrder
         })
       });
@@ -734,16 +802,112 @@ export default function App() {
           });
         }
 
-        // Notify all PositionableImages components to update their active state
+        // Notify all PositionableImages and Galleries to update their active state
         window.dispatchEvent(new Event("image_updated"));
+        window.dispatchEvent(new Event("photos_updated"));
+        window.dispatchEvent(new Event("testimonials_updated"));
 
-        toast.success("🚀 SUCESSO! Todas as alterações do site (textos, imagens enviadas e posicionadas por arraste, logo, rodapé e cores) foram publicadas no servidor com sucesso e estão visíveis para todos os leitores!");
+        toast.success("🚀 SUCESSO! Todas as alterações do site (galeria de fotos, conselho de embaixadores, textos, imagens e rodapé) foram sincronizadas na nuvem e estão visíveis para todos no domínio oficial www.docomecoaotopo.com.br!");
       } else {
         throw new Error(data.error || "Erro desconhecido");
       }
     } catch (e: any) {
       setIsPublishing(false);
       toast.error("❌ Falha ao publicar as atualizações no servidor: " + e.message);
+    }
+  };
+
+  const syncClientToCloud = async (notifyUser: boolean = true) => {
+    try {
+      const positionableImages: Record<string, any> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (
+          key.startsWith("img-pos-") ||
+          key.startsWith("community-member-") ||
+          key.startsWith("community-camp-") ||
+          key.startsWith("ambassador-pic-") ||
+          key.startsWith("quem-somos-profile-") ||
+          key.endsWith("_uploaded_src")
+        ) {
+          const val = localStorage.getItem(key);
+          if (val !== null) {
+            if (key.endsWith("_uploaded_src")) {
+              positionableImages[key] = val;
+            } else {
+              try {
+                const parsed = JSON.parse(val);
+                if (parsed && typeof parsed.x === "number" && typeof parsed.y === "number") {
+                  positionableImages[key] = parsed;
+                }
+              } catch (e) {
+                // Ignore invalid JSON
+              }
+            }
+          }
+        }
+      }
+
+      const allPhotosList: any[] = [];
+      const seenPhotoIds = new Set<string>();
+      const addPhotoSafe = (p: any) => {
+        if (!p || !p.url) return;
+        const id = String(p.id || `photo-${Date.now()}-${Math.random()}`);
+        if (!seenPhotoIds.has(id)) {
+          seenPhotoIds.add(id);
+          allPhotosList.push({ ...p, id });
+        }
+      };
+
+      try {
+        const gPhotos = localStorage.getItem("global_photo_gallery");
+        if (gPhotos) JSON.parse(gPhotos).forEach(addPhotoSafe);
+        const ePhotos = localStorage.getItem("embaixadores_photos_db");
+        if (ePhotos) JSON.parse(ePhotos).forEach(addPhotoSafe);
+        const cPhotos = localStorage.getItem("comunidade_photos_db");
+        if (cPhotos) JSON.parse(cPhotos).forEach(addPhotoSafe);
+      } catch (e) {
+        console.warn("Could not parse local photo galleries", e);
+      }
+
+      const embaixadores_list = quemSomosAmbassadors.map((a, idx) => {
+        const key = `ambassador-pic-${idx}-${a.name}_uploaded_src`;
+        const uploadedSrc = localStorage.getItem(key);
+        return {
+          ...a,
+          photoUrl: uploadedSrc || a.photoUrl || OFFICIAL_AMBASSADORS[idx]?.photoUrl
+        };
+      });
+
+      const payload = {
+        portalPagesConfig,
+        logoConfig,
+        gradientStyle,
+        footerCredits,
+        quem_somos_profile_pic: quemSomosProfilePic,
+        quem_somos_gallery: quemSomosGallery,
+        photos: allPhotosList,
+        positionableImages,
+        embaixadores_list,
+        articles,
+        homepage_sections_order: homepageSectionsOrder
+      };
+
+      const res = await fetch("/api/sync-all-from-client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success && notifyUser) {
+        playSuccessSound();
+        toast.success("⚡ Sincronização Concluída! Todas as fotos, embaixadores e conteúdos foram salvos na nuvem e já estão ativos em www.docomecoaotopo.com.br");
+      }
+    } catch (err: any) {
+      if (notifyUser) {
+        toast.error("Erro ao sincronizar: " + err.message);
+      }
     }
   };
 
@@ -977,16 +1141,16 @@ export default function App() {
               const localPhoto = localStorage.getItem(localPhotoKey);
               
               let currentPhoto = localPhoto;
-              if (!currentPhoto || currentPhoto === "undefined" || currentPhoto === "null") {
+              if (!currentPhoto || currentPhoto.trim() === "" || currentPhoto === "undefined" || currentPhoto === "null") {
                 currentPhoto = a.photoUrl;
               }
-              if (!currentPhoto || currentPhoto === "undefined" || currentPhoto === "null") {
+              if (!currentPhoto || currentPhoto.trim() === "" || currentPhoto === "undefined" || currentPhoto === "null") {
                 currentPhoto = defaultAmb?.photoUrl;
               }
               if (currentPhoto && currentPhoto.startsWith("data:image/")) {
                 currentPhoto = defaultAmb?.photoUrl;
               }
-              if (!currentPhoto || currentPhoto === "undefined" || currentPhoto === "null") {
+              if (!currentPhoto || currentPhoto.trim() === "" || currentPhoto === "undefined" || currentPhoto === "null") {
                 currentPhoto = defaultAmb?.photoUrl || "";
               }
 
@@ -1194,6 +1358,16 @@ export default function App() {
             // Update all custom on-screen image elements
             window.dispatchEvent(new Event("image_updated"));
           }
+          // Sync server photos (Galeria de fotos)
+          if (Array.isArray(data.photos) && data.photos.length > 0) {
+            localStorage.setItem("global_photo_gallery", JSON.stringify(data.photos));
+            window.dispatchEvent(new Event("photos_updated"));
+          }
+          // Sync server testimonials
+          if (Array.isArray(data.testimonials) && data.testimonials.length > 0) {
+            localStorage.setItem("docomeco_testimonials", JSON.stringify(data.testimonials));
+            window.dispatchEvent(new Event("testimonials_updated"));
+          }
           // Sync server articles with general list
           if (Array.isArray(data.articles) && data.articles.length > 0) {
             setArticles((prev) => {
@@ -1206,9 +1380,20 @@ export default function App() {
               return merged;
             });
           }
+
+          // Auto-heal / Auto-sync local preview data to cloud if this is a preview or authoring browser
+          const isPreviewHost = window.location.hostname.includes("run.app") || window.location.hostname.includes("ai.studio") || window.location.hostname === "localhost";
+          const hasLocalCustomData = localStorage.getItem("global_photo_gallery") || localStorage.getItem("embaixadores_photos_db");
+          if (isPreviewHost && hasLocalCustomData) {
+            setTimeout(() => {
+              syncClientToCloud(false);
+            }, 2500);
+          }
         }
       })
-      .catch((err) => console.error("Error loading server-side database:", err));
+      .catch(() => {
+        // Silently fallback to cached local state if backend is initializing
+      });
 
     const handleOpenAmbassadorAdd = () => {
       setEditingAmbassadorIdx(null);
@@ -1417,7 +1602,7 @@ export default function App() {
         isDarkMode ? "bg-black text-white" : "bg-stone-50 text-stone-900"
       }`}
     >
-      <VLibras forceOnload={true} />
+      {!showWelcomePopup && <VLibras forceOnload={true} />}
       <Toaster position="top-center" richColors />
       {/* Dynamic Background Glowing Spheres (Green & Pink) */}
       {isDarkMode && (
@@ -1527,7 +1712,7 @@ export default function App() {
                 </span>
                 <input
                   type="text"
-                  placeholder="Buscar notícias regionais, cursos ou eventos..."
+                  placeholder="Buscar notícias regionais, podcasts ou eventos..."
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   className={`w-full pl-10 pr-20 py-2 rounded-full text-xs font-sans transition-all ${
@@ -1906,23 +2091,6 @@ export default function App() {
                 <span className="text-[8px] font-mono px-1 rounded bg-pink-500/10 text-pink-400 font-black tracking-widest">VIP</span>
               </button>
 
-              {/* CURSOS ON-LINE */}
-              <button
-                onClick={() => {
-                  playClickSound(645, "sine");
-                  setSelectedCategory("CURSOS");
-                  setActiveSection(null);
-                  window.scrollTo({ top: 300, behavior: "smooth" });
-                }}
-                className={`py-1 transition-all ${
-                  selectedCategory === "CURSOS"
-                    ? "text-[#22c55e] font-black"
-                    : isDarkMode ? "text-zinc-350 hover:text-[#22c55e]" : "text-stone-700 hover:text-green-650"
-                }`}
-              >
-                <span className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5" /> CURSOS ON-LINE</span>
-              </button>
-
               {/* 7. PARCEIROS */}
               <button
                 onClick={() => {
@@ -2109,6 +2277,7 @@ export default function App() {
                 </div>
                 <PendingApprovalScreen
                   user={user}
+                  supportWhatsapp={portalPagesConfig.contatoWhatsapp || "+55 (32) 98412-4860"}
                   onLogout={handleLogout}
                   onRefreshStatus={async () => {
                     if (user.email) {
@@ -2284,6 +2453,7 @@ export default function App() {
                   {!user.isAdmin && (user.status === "suspended" || !user.status) ? (
                     <PendingApprovalScreen
                       user={user}
+                      supportWhatsapp={portalPagesConfig.contatoWhatsapp || "+55 (32) 98412-4860"}
                       onLogout={handleLogout}
                       onRefreshStatus={async () => {
                         if (user.email) {
@@ -3652,7 +3822,7 @@ export default function App() {
                     )}
 
                     {activeSection === "OBJETIVOS" && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Card 1: Portal */}
                         <div className="p-5 bg-zinc-900/50 hover:bg-zinc-900/80 border border-zinc-850 hover:border-green-500/20 rounded-2xl transition-all duration-300 space-y-2.5">
                           <div className="flex items-center gap-2 pb-2 border-b border-zinc-800/40">
@@ -3740,36 +3910,6 @@ export default function App() {
                           )}
                           <p className="text-[10px] leading-relaxed text-zinc-500 italic">
                             O propósito da comunidade é acelerar negócios, fortalecer marcas, desenvolver liderança e criar um ecossistema colaborativo onde todos possam crescer juntos através do conhecimento e das conexões certas.
-                          </p>
-                        </div>
-
-                        {/* Card 4: Cursos Online */}
-                        <div className="p-5 bg-zinc-900/50 hover:bg-zinc-900/80 border border-zinc-850 hover:border-blue-500/20 rounded-2xl transition-all duration-300 space-y-2.5">
-                          <div className="flex items-center gap-2 pb-2 border-b border-zinc-800/40">
-                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 shadow-sm">
-                              <Rocket className="w-4 h-4 text-blue-400 animate-pulse" />
-                            </div>
-                            <h4 className="font-display font-black text-xs uppercase tracking-wider text-white">
-                              Cursos Online “Do Começo ao Topo”
-                            </h4>
-                          </div>
-                          {isDirectEditingEnabled ? (
-                            <div className="space-y-1">
-                              <span className="text-[8px] font-mono font-black text-blue-400 uppercase">Editar Texto dos Cursos:</span>
-                              <textarea
-                                value={portalPagesConfig.objetivosCursos}
-                                onChange={(e) => handleSavePortalPagesConfig({ ...portalPagesConfig, objetivosCursos: e.target.value })}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded-xl p-2.5 text-[11px] text-white focus:outline-none focus:border-green-500 transition leading-relaxed"
-                                rows={4}
-                              />
-                            </div>
-                          ) : (
-                            <p className="text-[11px] leading-relaxed text-zinc-300">
-                              {portalPagesConfig.objetivosCursos}
-                            </p>
-                          )}
-                          <p className="text-[10px] leading-relaxed text-zinc-500 italic">
-                            O objetivo é capacitar pessoas e empresas para alcançarem resultados reais, despertando potencial, confiança e visão de crescimento através da educação e do conhecimento.
                           </p>
                         </div>
                       </div>
@@ -3964,7 +4104,7 @@ export default function App() {
                                 <label className="text-[8px] font-mono font-black text-zinc-400 uppercase tracking-widest block mb-0.5">Número do WhatsApp (com DDI e DDD)</label>
                                 <input
                                   type="text"
-                                  value={portalPagesConfig.contatoWhatsapp || "+55 (32) 99999-9999"}
+                                  value={portalPagesConfig.contatoWhatsapp || "+55 (32) 98412-4860"}
                                   onChange={(e) => handleSavePortalPagesConfig({ ...portalPagesConfig, contatoWhatsapp: e.target.value })}
                                   className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-green-500 font-sans"
                                 />
@@ -4238,13 +4378,21 @@ export default function App() {
                   <ComunidadeDashboard 
                     isDarkMode={isDarkMode} 
                     isAdmin={isDirectEditingEnabled} 
+                    portalPagesConfig={portalPagesConfig}
+                    user={user}
                     onLogout={handleLogout} 
                     externalBranchFilter={selectedBranch}
                   />
                 </div>
               ) : selectedCategory === "EMBAIXADORES" ? (
                 <div id="embaixadores-section-root">
-                  <EmbaixadoresDashboard isDarkMode={isDarkMode} isAdmin={isDirectEditingEnabled} onLogout={handleLogout} />
+                  <EmbaixadoresDashboard 
+                    isDarkMode={isDarkMode} 
+                    isAdmin={isDirectEditingEnabled} 
+                    portalPagesConfig={portalPagesConfig}
+                    user={user}
+                    onLogout={handleLogout} 
+                  />
                 </div>
               ) : selectedCategory === "PARCEIROS" ? (
                 <div id="parceiros-category-section-root" className="py-4">
@@ -4378,7 +4526,24 @@ export default function App() {
 
                   {/* PODCAST PROMINENT YOUTUBE CHANNEL WIDGET */}
                   {(selectedCategory === "PODCAST" || selectedCategory === null) && (
-                    <PodcastSection isDarkMode={isDarkMode} user={user} directEditingMode={isDirectEditingEnabled} />
+                    <div id="podcast-youtube-root-section">
+                      <PodcastSection 
+                        isDarkMode={isDarkMode} 
+                        user={user} 
+                        directEditingMode={isDirectEditingEnabled}
+                        onOpenPip={(video) => setPipVideo(video)}
+                      />
+                    </div>
+                  )}
+
+                  {/* DESTAQUES DO MÊS (REGINA SIMÕES - EMBAIXADORA UNICORN SUMMIT & JF SUMMIT 26) */}
+                  {(selectedCategory === "EVENTOS" || selectedCategory === null) && (
+                    <MonthlyHighlightsSection isDarkMode={isDarkMode} />
+                  )}
+
+                  {/* PROMINENT UPCOMING EVENTS SECTION (PALESTRA REFORMA TRIBUTÁRIA / FLÁVIA REIS) */}
+                  {(selectedCategory === "EVENTOS" || selectedCategory === null) && (
+                    <UpcomingEventsSection isDarkMode={isDarkMode} />
                   )}
 
                   {/* CARD RENDERER DYNAMIC ENGINE */}
@@ -4786,6 +4951,21 @@ export default function App() {
                   {selectedArticle.content}
                 </div>
 
+                {/* External Official Link / Registration CTA */}
+                {selectedArticle.linkUrl && (
+                  <div className="pt-2">
+                    <a
+                      href={selectedArticle.linkUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-black font-mono font-black text-xs uppercase tracking-wider transition shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Acessar Site Oficial do Evento / Inscrições</span>
+                    </a>
+                  </div>
+                )}
+
                 {/* Article Tags */}
                 {selectedArticle.tags && selectedArticle.tags.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-2">
@@ -4916,7 +5096,6 @@ export default function App() {
               <button onClick={() => { playClickSound(610, "sine"); handleSelectCategory("EVENTOS"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-left hover:text-green-400 transition-colors flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Eventos</button>
               <button onClick={() => { playClickSound(620, "sine"); handleSelectCategory("COMUNIDADE"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-left hover:text-green-400 transition-colors flex items-center gap-1.5"><MessageSquare className="w-3.5 h-3.5" /> Comunidade</button>
               <button onClick={() => { playClickSound(630, "sine"); handleSelectCategory("EMBAIXADORES"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-left hover:text-pink-400 text-pink-500 transition-colors flex items-center gap-1.5"><Diamond className="w-3.5 h-3.5" /> Embaixadores</button>
-              <button onClick={() => { playClickSound(645, "sine"); handleSelectCategory("CURSOS"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-left hover:text-green-400 transition-colors flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5" /> Cursos On-line</button>
               <button onClick={() => { playClickSound(648, "sine"); setActiveSection("GALERIA"); setSelectedCategory(null); window.scrollTo({ top: 300, behavior: "smooth" }); }} className="text-left hover:text-pink-400 transition-colors flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Galeria de Fotos</button>
               <button onClick={() => { playClickSound(660, "sine"); handleSelectCategory("PARCEIROS"); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-left hover:text-green-400 transition-colors flex items-center gap-1.5"><Handshake className="w-3.5 h-3.5" /> Parceiros</button>
               <button onClick={() => { playClickSound(660, "sine"); window.open("https://www.youtube.com/@podcastdocome%C3%A7oaotopo", "_blank"); }} className="text-left hover:text-green-400 transition-colors flex items-center gap-1.5"><Mic className="w-3.5 h-3.5" /> Podcast</button>
@@ -4963,7 +5142,8 @@ export default function App() {
               </button>
             </div>
           </div>
-          <SpotifyPlayer />
+          {/* Spotify player temporarily hidden as requested */}
+          {/* <SpotifyPlayer /> */}
         </div>
       </footer>
 
@@ -4990,6 +5170,21 @@ export default function App() {
         isOpen={isFaceNavOpen}
         onClose={() => setIsFaceNavOpen(false)}
       />
+
+      {/* FLOATING PICTURE-IN-PICTURE PODCAST VIDEO PLAYER */}
+      <AnimatePresence>
+        {pipVideo && (
+          <PodcastPipPlayer
+            video={pipVideo}
+            onClose={() => setPipVideo(null)}
+            onExpand={() => {
+              // Expand back into feed section smoothly
+              setSelectedCategory("PODCAST");
+              window.scrollTo({ top: 400, behavior: "smooth" });
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Collapse Trigger Button for Right Side Widgets */}
       <AnimatePresence>
@@ -5069,6 +5264,7 @@ export default function App() {
               </button>
               <PendingApprovalScreen
                 user={user}
+                supportWhatsapp={portalPagesConfig.contatoWhatsapp || "+55 (32) 98412-4860"}
                 onLogout={() => {
                   handleLogout();
                   setShowPendingModal(false);
@@ -5371,12 +5567,20 @@ export default function App() {
             </span>
           </div>
 
-          {/* Right panel: Main Publish Action Button */}
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col items-end text-right">
-              <span className="text-[9px] font-mono text-zinc-400 uppercase">Mudanças Pendentes</span>
-              <span className="text-[11px] text-white font-bold font-mono text-stone-300">Autosave Inteligente Ativo</span>
-            </div>
+          {/* Right panel: Main Publish & Sync Action Buttons */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              id="sync-all-cloud-btn"
+              onClick={() => {
+                playClickSound(640, "sine");
+                syncClientToCloud(true);
+              }}
+              className="px-3.5 py-2.5 rounded-xl font-display font-black text-[11px] uppercase tracking-wider transition-all duration-300 shadow-md flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-pink-400 hover:text-pink-300 border border-pink-500/30 active:scale-95 cursor-pointer"
+              title="Salva todas as fotos, embaixadores e conteúdos diretamente na Nuvem do Google para www.docomecoaotopo.com.br"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-pink-400 animate-pulse" />
+              <span>Sincronizar Nuvem ⚡</span>
+            </button>
             
             <button
               id="publish-all-live-btn"
@@ -5388,7 +5592,7 @@ export default function App() {
               className={`px-5 py-2.5 rounded-xl font-display font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-lg flex items-center gap-2 ${
                 isPublishing 
                   ? "bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-750"
-                  : "bg-gradient-to-r from-pink-500 to-green-500 hover:from-pink-650 hover:to-green-550 text-black shadow-pink-500/10 hover:shadow-pink-500/20 active:scale-95"
+                  : "bg-gradient-to-r from-pink-500 to-green-500 hover:from-pink-600 hover:to-green-600 text-black shadow-pink-500/10 hover:shadow-pink-500/20 active:scale-95 cursor-pointer"
               }`}
             >
               {isPublishing ? (

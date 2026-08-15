@@ -20,7 +20,74 @@ interface GalleryPhoto {
   gallery?: string;
 }
 
-const PRELOADED_GALLERY: GalleryPhoto[] = [];
+const PRELOADED_GALLERY: GalleryPhoto[] = [
+  {
+    id: "photo-init-1",
+    url: "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=1200&q=80",
+    title: "Encontro Estratégico de Liderança e Negócios",
+    theme: "Negócios",
+    city: "Juiz de Fora",
+    views: 48,
+    date: "2026-05-15",
+    isCustom: false,
+    gallery: "global"
+  },
+  {
+    id: "photo-init-2",
+    url: "https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&fit=crop&w=1200&q=80",
+    title: "Mesa Redonda com o Conselho de Embaixadores Oficiais",
+    theme: "Embaixadores",
+    city: "Juiz de Fora",
+    views: 62,
+    date: "2026-05-10",
+    isCustom: false,
+    gallery: "embaixadores"
+  },
+  {
+    id: "photo-init-3",
+    url: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80",
+    title: "Painel Mulheres Empreendedoras da Zona da Mata",
+    theme: "Comunidade",
+    city: "Juiz de Fora",
+    views: 89,
+    date: "2026-05-02",
+    isCustom: false,
+    gallery: "comunidade"
+  },
+  {
+    id: "photo-init-4",
+    url: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&w=1200&q=80",
+    title: "Gravação Exclusiva no Estúdio Do Começo ao Topo Podcast",
+    theme: "Mentoria",
+    city: "Juiz de Fora",
+    views: 114,
+    date: "2026-04-28",
+    isCustom: false,
+    gallery: "global"
+  },
+  {
+    id: "photo-init-5",
+    url: "https://images.unsplash.com/photo-1475721027785-f74eccf877e2?auto=format&fit=crop&w=1200&q=80",
+    title: "Workshop de Posicionamento e Estratégia Comercial",
+    theme: "Educação",
+    city: "Matias Barbosa",
+    views: 37,
+    date: "2026-04-20",
+    isCustom: false,
+    gallery: "global"
+  },
+  {
+    id: "photo-init-6",
+    url: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1200&q=80",
+    title: "Rodada de Parcerias e Conexões na Região da Mata",
+    theme: "Negócios",
+    city: "Ubá",
+    views: 53,
+    date: "2026-04-12",
+    isCustom: false,
+    gallery: "global"
+  }
+];
 
 const THEMES_LIST = ["Todos", "Negócios", "Embaixadores", "Comunidade", "Agronegócio", "Educação", "Desenvolvimento", "Mentoria", "Tecnologia"];
 
@@ -182,14 +249,14 @@ export default function GlobalPhotoGallery({ isDarkMode, isAdmin, portalPagesCon
             }
           });
 
-          setPhotos(combinedList);
+          setPhotos(combinedList.length > 0 ? combinedList : PRELOADED_GALLERY);
         } else {
-          setPhotos(allLocalPhotos);
+          setPhotos(allLocalPhotos.length > 0 ? allLocalPhotos : PRELOADED_GALLERY);
         }
       })
       .catch(err => {
         console.error("Error fetching published photos from server:", err);
-        setPhotos(allLocalPhotos);
+        setPhotos(allLocalPhotos.length > 0 ? allLocalPhotos : PRELOADED_GALLERY);
       });
 
     // Add event listener for quick upload opening from + CRIAR NOVO admin button
@@ -202,8 +269,21 @@ export default function GlobalPhotoGallery({ isDarkMode, isAdmin, portalPagesCon
     };
     window.addEventListener("admin_open_photo_upload", handleOpenUpload);
 
+    const handlePhotosUpdated = () => {
+      fetch("/api/photos")
+        .then(res => res.json())
+        .then(serverPhotos => {
+          if (Array.isArray(serverPhotos) && serverPhotos.length > 0) {
+            setPhotos(serverPhotos.map(sp => normalizeToGalleryPhoto(sp, sp.gallery === "embaixadores" ? "Embaixadores" : "Negócios", sp.gallery || "global")));
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("photos_updated", handlePhotosUpdated);
+
     return () => {
       window.removeEventListener("admin_open_photo_upload", handleOpenUpload);
+      window.removeEventListener("photos_updated", handlePhotosUpdated);
     };
   }, []);
 

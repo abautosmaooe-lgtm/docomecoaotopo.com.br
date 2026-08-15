@@ -8,11 +8,17 @@ interface PendingApprovalScreenProps {
   user: AppUser;
   onLogout: () => void;
   onRefreshStatus?: () => void;
+  supportWhatsapp?: string;
 }
 
-export default function PendingApprovalScreen({ user, onLogout, onRefreshStatus }: PendingApprovalScreenProps) {
-  const whatsappNumber = "5532999999999"; // Default support whatsapp
-  const whatsappText = encodeURIComponent(`Olá! Meu e-mail é ${user.email} e fiz login no Portal. Gostaria de solicitar a aprovação/liberação do meu acesso.`);
+export default function PendingApprovalScreen({ user, onLogout, onRefreshStatus, supportWhatsapp }: PendingApprovalScreenProps) {
+  // Official Portal WhatsApp number: +55 32 98412-4860
+  let cleanDigits = (supportWhatsapp || "").replace(/\D/g, "");
+  if (!cleanDigits || cleanDigits.includes("999999999") || cleanDigits.includes("99999")) {
+    cleanDigits = "5532984124860";
+  }
+  const whatsappNumber = cleanDigits.startsWith("55") ? cleanDigits : `55${cleanDigits}`;
+  const whatsappText = encodeURIComponent(`Olá! Meu e-mail é ${user.email} e fiz login no Portal Do Começo ao Topo. Gostaria de solicitar a aprovação/liberação do meu acesso.`);
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappText}`;
 
   return (

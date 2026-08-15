@@ -166,8 +166,8 @@ export default function PartnersCarousel({ isAdmin = false }: PartnersCarouselPr
           savePartnersList(DEFAULT_PARTNERS);
         }
       })
-      .catch(err => {
-        console.error("Error loading partners from database:", err);
+      .catch(() => {
+        savePartnersList(DEFAULT_PARTNERS);
       });
 
     // Add event listener for + CRIAR NOVO admin button

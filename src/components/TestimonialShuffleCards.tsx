@@ -40,27 +40,41 @@ export function parseAuthor(authorStr: string) {
   return { name: authorStr.trim(), title: "" };
 }
 
-const DEFAULT_TESTIMONIALS: Testimonial[] = [
+export const DEFAULT_TESTIMONIALS: Testimonial[] = [
   {
     id: "t-1",
-    testimonial: "Sinto que aprendi tanto com este portal quanto no meu próprio curso técnico. É a primeira coisa que leio todas as manhãs para me manter informada sobre o Sudeste de Minas.",
-    author: "Juliana F. - Diretora de Marketing @ JF Móveis",
-    avatarId: 5,
-    avatarUrl: ""
+    testimonial: "Fazer parte do portal de negócios do podcast 'Do Começo ao Topo' tem sido um verdadeiro divisor de águas na minha trajetória. O ambiente de networking é incrível e me permite trocar experiências riquíssimas com outros líderes que transformam o cenário regional todos os dias.",
+    author: "Danielle Lara - Mentora e Empresária",
+    avatarUrl: "/danielle-profile.jpg",
+    avatarId: 1
   },
   {
     id: "t-2",
-    testimonial: "Minhas amigas acham que estou sempre super antenada nas notícias e eventos culturais da cidade. Sinceramente, eu apenas sigo este portal e ativo as notificações do Topina!",
-    author: "Beatriz M. - Arquiteta @ JF Estúdios",
-    avatarId: 9,
-    avatarUrl: ""
+    testimonial: "Estar presente no portal e participar ativamente das divulgações e eventos me proporcionou uma rede sólida de parcerias e conexões valiosas. É uma honra ver a força do empreendedorismo feminino de toda a região reunida neste ecossistema.",
+    author: "Fátima Regina Anthero - Embaixadora do Bem-estar & Saúde",
+    avatarUrl: "/regina-profile.jpg",
+    avatarId: 5
   },
   {
     id: "t-3",
-    testimonial: "Não consigo acreditar que um conteúdo regional tão rico e interativo seja gratuito. Vale cada segundo de leitura. É uma verdadeira vitrine para os nossos negócios locais.",
-    author: "Gabriela R. - Produtora Cultural @ Barbacena",
-    avatarId: 16,
-    avatarUrl: ""
+    testimonial: "O portal 'Do Começo ao Topo' conecta propósitos reais a oportunidades de mercado. A troca contínua entre as leitoras, empresárias e a nossa comunidade gera impacto direto no crescimento dos nossos negócios locais.",
+    author: "Jaqueline de Carvalho Dias - Embaixadora & Terapeuta Integrativa",
+    avatarUrl: "/jaqueline-profile.jpg",
+    avatarId: 9
+  },
+  {
+    id: "t-4",
+    testimonial: "Histórias reais têm o poder de transformar começos em grandes conquistas. Este portal é a vitrine definitiva de inspiração, saúde, conhecimento e coragem para quem busca o topo.",
+    author: "Bianca Torres - Nutricionista & Embaixadora Inspiração",
+    avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400",
+    avatarId: 12
+  },
+  {
+    id: "t-5",
+    testimonial: "Aceleramos nossos negócios e construímos conexões estratégicas de alto valor. Estar no portal Do Começo ao Topo coloca nossos projetos em evidência para todo o mercado regional.",
+    author: "Flávia Reis - Consultora & Especialista Tributária",
+    avatarUrl: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400",
+    avatarId: 16
   }
 ];
 
@@ -284,10 +298,43 @@ export default function TestimonialShuffleCards({ isDarkMode, isAdmin = false }:
       .then((res) => res.json())
       .then((data) => {
         if (data && Array.isArray(data.testimonials) && data.testimonials.length > 0) {
-          setTestimonials(data.testimonials);
+          const isOutdated = data.testimonials.some((t: Testimonial) => 
+            t.author?.includes("Beatriz M.") || t.author?.includes("Juliana F.") || t.author?.includes("JF Móveis")
+          );
+          const hasDanielle = data.testimonials.some((t: Testimonial) => 
+            t.author?.toLowerCase().includes("danielle lara")
+          );
+
+          if (isOutdated || !hasDanielle) {
+            setTestimonials(DEFAULT_TESTIMONIALS);
+            persistTestimonials(DEFAULT_TESTIMONIALS);
+          } else {
+            setTestimonials(data.testimonials);
+          }
+        } else {
+          setTestimonials(DEFAULT_TESTIMONIALS);
+          persistTestimonials(DEFAULT_TESTIMONIALS);
         }
       })
-      .catch((err) => console.error("Error loading testimonials:", err));
+      .catch(() => {
+        setTestimonials(DEFAULT_TESTIMONIALS);
+      });
+
+    const handleTestimonialsUpdated = () => {
+      fetch("/api/published-data")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && Array.isArray(data.testimonials) && data.testimonials.length > 0) {
+            setTestimonials(data.testimonials);
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("testimonials_updated", handleTestimonialsUpdated);
+
+    return () => {
+      window.removeEventListener("testimonials_updated", handleTestimonialsUpdated);
+    };
   }, []);
 
   // Initialize SpeechSynthesis reference
@@ -753,7 +800,7 @@ export default function TestimonialShuffleCards({ isDarkMode, isAdmin = false }:
                       type="text" 
                       value={formAuthor}
                       onChange={e => setFormAuthor(e.target.value)}
-                      placeholder="Ex: Juliana F. - Diretora de Marketing @ JF Móveis"
+                      placeholder="Ex: Danielle Lara - Mentora e Empresária"
                       className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white focus:border-pink-500 focus:outline-none"
                     />
                   </div>

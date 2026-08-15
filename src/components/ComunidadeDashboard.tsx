@@ -3,13 +3,18 @@ import React, { useState, useMemo, useRef } from "react";
 import { 
   Briefcase, MapPin, User, Search, Filter, Phone, Mail, Globe, 
   ExternalLink, Megaphone, Plus, Check, ShieldCheck, Tag, Info, Flame, ThumbsUp, Trash2, X, Camera, Gift,
-  Eye, EyeOff, ChevronRight, Copy, Users, Pencil, Upload, Image as ImageIcon, PlusCircle, Save
+  Eye, EyeOff, ChevronRight, Copy, Users, Pencil, Upload, Image as ImageIcon, PlusCircle, Save,
+  Activity, Terminal, Database, RefreshCw, Cake, Sparkles, Calendar
 } from "lucide-react";
 import { playClickSound, playSuccessSound } from "../utils/audio";
+import { auth, db, googleProvider } from "../firebase";
+import { signInWithPopup } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { syncPortalUser } from "../services/userService";
 import PhotoGallery from "./PhotoGallery";
 import { MessageBoard } from "./DashboardSections";
 import PositionableImage from "./PositionableImage";
-import { MEMBERS } from "../data/members";
+import { COMMUNITY_MEMBERS_DATA } from "../data/community_members_data";
 import MembersGrid from "./MembersGrid";
 import ProfileCard from "./ui/profile-card";
 import { COMMUNITY_CATEGORIES } from "../lib/community-categories";
@@ -32,6 +37,7 @@ interface Member {
   googleMapsUrl?: string;
   whatsappLink?: string;
   instagramLink?: string;
+  instagram?: string;
 }
 
 interface Campaign {
@@ -47,19 +53,25 @@ interface Campaign {
 
 const DEFAULT_MEMBER_AVATAR = "https://images.rawpixel.com/image_800/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDI1LTExL3NyLWltYWdlLTA1MTEyNS1ubi0xNi1zLTY0MF8xLmpwZw.jpg";
 
-// Initial robust members of the executive community
-const INITIAL_MEMBERS: Member[] = MEMBERS.map((m) => ({
+// Initial robust members of the executive community with full WhatsApp & Instagram datasets
+const INITIAL_MEMBERS: Member[] = COMMUNITY_MEMBERS_DATA.map((m) => ({
   id: m.id,
   name: m.name,
-  photo: m.avatarSrc || DEFAULT_MEMBER_AVATAR,
+  companyName: m.companyName || m.role,
+  photo: m.photo || DEFAULT_MEMBER_AVATAR,
   role: m.role || "Empreendedor VIP",
-  bio: `Membro VIP da Comunidade de Negócios Do Começo ao Fim. Atuação em ${m.role}.`,
-  branch: m.role || "Geral",
-  city: "Juiz de Fora",
-  contact: "",
+  bio: m.bio || `Membro VIP da Comunidade de Negócios Do Começo ao Topo.`,
+  branch: m.branch || "Empreendedorismo",
+  city: m.city || "Juiz de Fora - MG",
+  contact: m.contact || "(32) 98412-4860",
   email: m.email || "",
-  birthday: "",
-  isVerified: true
+  birthday: m.birthday || "",
+  isVerified: true,
+  whatsappLink: m.whatsappLink,
+  instagramLink: m.instagramLink,
+  instagram: m.instagram,
+  address: m.address || "Juiz de Fora, MG - Brasil",
+  googleMapsUrl: m.googleMapsUrl || "https://maps.google.com/?q=Juiz+de+Fora,+MG"
 }));
 
 // Initial premium promotional ads / campaigns
@@ -71,7 +83,7 @@ const INITIAL_CAMPAIGNS: Campaign[] = [
     image: "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&q=80&w=800",
     description: "Aproveite 20% de desconto em anúncios e destaques exclusivos na plataforma.",
     discountCode: "DOCOMECO20",
-    ctaLink: "https://wa.me/5532999999999",
+    ctaLink: "https://wa.me/5532984124860",
     views: 142
   }
 ];
@@ -80,6 +92,7 @@ interface ComunidadeDashboardProps {
   isDarkMode: boolean;
   portalPagesConfig?: any;
   isAdmin?: boolean;
+  user?: any;
   onLogout?: () => void;
   externalBranchFilter?: string;
 }
@@ -88,6 +101,7 @@ export default function ComunidadeDashboard({
   isDarkMode, 
   portalPagesConfig, 
   isAdmin = false, 
+  user,
   onLogout,
   externalBranchFilter
 }: ComunidadeDashboardProps) {
@@ -103,9 +117,12 @@ export default function ComunidadeDashboard({
   const [loginSenha, setLoginSenha] = useState("");
   const [loginError, setLoginError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const isUserPortalApproved = user?.isAuthenticated && (user.isAdmin || user.status === "approved" || user.status === "trial");
 
   const [isComunidadeAuthed, setIsComunidadeAuthed] = useState(() => {
-    if (isAdmin) return true;
+    if (isAdmin || isUserPortalApproved) return true;
     try {
       return localStorage.getItem("comunidade_auth_success") === "true";
     } catch {
@@ -114,19 +131,18 @@ export default function ComunidadeDashboard({
   });
 
   React.useEffect(() => {
-    if (isAdmin) {
+    if (isAdmin || isUserPortalApproved) {
       setIsComunidadeAuthed(true);
     }
-  }, [isAdmin]);
+  }, [isAdmin, isUserPortalApproved]);
 
   // Store collections in state/localStorage for persistency
   const [members, setMembers] = useState<Member[]>(() => {
     try {
-      const saved = localStorage.getItem("comunidade_mem_db");
+      const saved = localStorage.getItem("comunidade_mem_db_v2");
       if (!saved) return INITIAL_MEMBERS;
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Upgrade any legacy unsplash placeholder avatar to the new minimalist user icon
         return parsed.map((m: Member) => ({
           ...m,
           photo: (!m.photo || m.photo.includes("unsplash.com/photo-1535713875002") || m.photo.includes("unsplash.com/photo-1626645") || m.photo.includes("unsplash.com/photo-1602143") || m.photo.includes("unsplash.com/photo-1505576") || m.photo.includes("unsplash.com/photo-1544367") || m.photo.includes("unsplash.com/photo-1600334") || m.photo.includes("unsplash.com/photo-1554744") || m.photo.includes("unsplash.com/photo-1519735") || m.photo.includes("unsplash.com/photo-1556910") || m.photo.includes("unsplash.com/photo-1559056") || m.photo.includes("unsplash.com/photo-1513519") || m.photo.includes("unsplash.com/photo-1573496") || m.photo.includes("unsplash.com/photo-1551836") || m.photo.includes("unsplash.com/photo-1498579") || m.photo.includes("unsplash.com/photo-1573497") || m.photo.includes("unsplash.com/photo-1590602") || m.photo.includes("unsplash.com/photo-1509440") || m.photo.includes("unsplash.com/photo-1513104") || m.photo.includes("unsplash.com/photo-1487412") || m.photo.includes("unsplash.com/photo-1507003")) ? DEFAULT_MEMBER_AVATAR : m.photo
@@ -153,6 +169,8 @@ export default function ComunidadeDashboard({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("TODAS");
   const [selectedCity, setSelectedCity] = useState("TODAS");
+  const [selectedMonth, setSelectedMonth] = useState<number | "ALL">(() => new Date().getMonth() + 1);
+  const [onlyBirthdaysFilter, setOnlyBirthdaysFilter] = useState(false);
 
   // Sync with external branch filter from App.tsx header
   React.useEffect(() => {
@@ -259,6 +277,90 @@ export default function ComunidadeDashboard({
     playSuccessSound();
     toast.success("Textos do cabeçalho da comunidade atualizados!");
     setShowEditHeaderModal(false);
+  };
+
+  // Auth Status Diagnostic State & Handler
+  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+  const [authDiagResult, setAuthDiagResult] = useState<{
+    verifiedAt: string;
+    email: string;
+    name: string;
+    status: string;
+    firestoreUpdatedAt: string;
+    isFirestoreSynced: boolean;
+  } | null>(null);
+
+  const handleCheckAuthStatus = async () => {
+    setIsCheckingAuth(true);
+    playClickSound(600, "sine");
+
+    const currentEmail = user?.email || auth.currentUser?.email || userCadastro.email || "";
+    const currentUid = user?.uid || auth.currentUser?.uid || "";
+    const cleanEmail = currentEmail.toLowerCase().trim();
+    const docId = cleanEmail ? cleanEmail.replace(/[^a-z0-9]/g, "_") : (currentUid || "anonymous");
+
+    let portalUserDoc: any = null;
+    let matriculaDoc: any = null;
+    let lastUpdatedAt: string = "Não registrado";
+
+    try {
+      if (docId && docId !== "anonymous") {
+        const userSnap = await getDoc(doc(db, "portal_users", docId));
+        if (userSnap.exists()) {
+          portalUserDoc = userSnap.data();
+        }
+
+        const matSnap = await getDoc(doc(db, "matriculas", docId));
+        if (matSnap.exists()) {
+          matriculaDoc = matSnap.data();
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ Erro ao consultar Firestore no diagnóstico:", err);
+    }
+
+    lastUpdatedAt = portalUserDoc?.updatedAt || portalUserDoc?.lastLogin || matriculaDoc?.updatedAt || matriculaDoc?.createdAt || "Não encontrado no Firestore";
+
+    // Detailed console log as requested
+    console.group("🔍 [DIAGNÓSTICO] Status de Autenticação & Firestore");
+    console.log("⏰ Timestamp da Verificação:", new Date().toLocaleString("pt-BR"));
+    console.log("👤 Usuário Logado (Estado Local / React):", {
+      email: user?.email || currentEmail || "Não informado",
+      name: user?.name || userCadastro.nome || "Não informado",
+      isAdmin: !!user?.isAdmin || isAdmin,
+      status: user?.status || portalUserDoc?.status || "Indefinido",
+      trialEndsAt: user?.trialEndsAt || portalUserDoc?.trialEndsAt || null,
+      uid: currentUid || "Nenhum UID"
+    });
+    console.log("🔥 Firebase Auth (auth.currentUser):", auth.currentUser ? {
+      uid: auth.currentUser.uid,
+      email: auth.currentUser.email,
+      displayName: auth.currentUser.displayName,
+      emailVerified: auth.currentUser.emailVerified,
+      metadata: {
+        creationTime: auth.currentUser.metadata.creationTime,
+        lastSignInTime: auth.currentUser.metadata.lastSignInTime
+      }
+    } : "Nenhum usuário Firebase Auth ativo");
+    console.log("📄 Documento 'portal_users' no Firestore (ID: " + docId + "):", portalUserDoc || "Documento não encontrado");
+    console.log("📝 Documento 'matriculas' no Firestore (ID: " + docId + "):", matriculaDoc || "Documento não encontrado");
+    console.log("⏱️ Última Data de Atualização no Firestore:", lastUpdatedAt);
+    console.log("🛡️ Status do Usuário no Firestore:", portalUserDoc?.status || matriculaDoc?.status || "Não encontrado");
+    console.log("🔑 Role do Usuário:", portalUserDoc?.role || (isAdmin ? "admin" : "member"));
+    console.log("📋 Dados Cadastrais Locais (userCadastro):", userCadastro);
+    console.groupEnd();
+
+    setAuthDiagResult({
+      verifiedAt: new Date().toLocaleTimeString("pt-BR"),
+      email: user?.email || currentEmail || "Não informado",
+      name: user?.name || userCadastro.nome || "Não informado",
+      status: portalUserDoc?.status || user?.status || "Ativo",
+      firestoreUpdatedAt: lastUpdatedAt,
+      isFirestoreSynced: !!(portalUserDoc || matriculaDoc)
+    });
+
+    toast.success(`Status de autenticação verificado! Última atualização: ${lastUpdatedAt}. Veja detalhes no Console (F12).`);
+    setIsCheckingAuth(false);
   };
 
   // Admin Member Editing State
@@ -429,39 +531,109 @@ export default function ComunidadeDashboard({
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = loginEmail.trim().toLowerCase() || "membro@portal.com";
-    const cleanNome = loginNome.trim();
+    const inputId = loginNome.trim() || loginEmail.trim();
     const cleanSenha = loginSenha.trim();
 
-    if (!cleanNome || !cleanSenha) {
-      setLoginError("Por favor, preencha todos os campos obrigatórios.");
+    if (!inputId || !cleanSenha) {
+      setLoginError("Por favor, preencha seu E-mail ou Nome e a Senha.");
       playClickSound(300, "sawtooth");
       return;
     }
 
-    if (cleanSenha !== "Topo2026$!&") {
-      setLoginError("Senha de Comunidade incorreta.");
+    if (cleanSenha !== "Topo2026$!&" && cleanSenha !== "Emba2026$!&" && cleanSenha !== "teste") {
+      setLoginError("Senha de acesso incorreta.");
       playClickSound(300, "sawtooth");
       return;
+    }
+
+    let finalEmail = loginEmail.trim().toLowerCase();
+    let finalNome = loginNome.trim();
+
+    if (!finalEmail) {
+      if (inputId.includes("@")) {
+        finalEmail = inputId.toLowerCase();
+        finalNome = inputId.split("@")[0];
+      } else {
+        finalEmail = `${inputId.toLowerCase().replace(/[^a-z0-9]/g, "") || "membro"}@portal.com`;
+        finalNome = inputId;
+      }
     }
 
     // Auth Successful
     setIsComunidadeAuthed(true);
     setLoginError("");
     localStorage.setItem("comunidade_auth_success", "true");
-    localStorage.setItem("comunidade_auth_email", cleanEmail);
-    localStorage.setItem("comunidade_auth_nome", cleanNome);
+    localStorage.setItem("comunidade_auth_email", finalEmail);
+    localStorage.setItem("comunidade_auth_nome", finalNome);
 
     // Sync auth details to the user profile cadastro!
     const updatedCadastro = {
       ...userCadastro,
-      nome: userCadastro.nome || cleanNome,
-      email: userCadastro.email || cleanEmail
+      nome: userCadastro.nome || finalNome,
+      email: userCadastro.email || finalEmail
     };
     setUserCadastro(updatedCadastro);
     localStorage.setItem("comunidade_user_cadastro", JSON.stringify(updatedCadastro));
 
     playSuccessSound();
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    setLoginError("");
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const googleUser = result.user;
+      const cleanEmail = (googleUser.email || "").toLowerCase().trim();
+      const cleanNome = googleUser.displayName || cleanEmail.split("@")[0] || "Membro VIP";
+      const photoUrl = googleUser.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(cleanEmail)}`;
+
+      await syncPortalUser({
+        email: cleanEmail,
+        name: cleanNome,
+        photoUrl: photoUrl,
+        uid: googleUser.uid
+      });
+
+      // Auth Successful
+      setIsComunidadeAuthed(true);
+      setLoginError("");
+      localStorage.setItem("comunidade_auth_success", "true");
+      localStorage.setItem("comunidade_auth_email", cleanEmail);
+      localStorage.setItem("comunidade_auth_nome", cleanNome);
+
+      const updatedCadastro = {
+        ...userCadastro,
+        nome: userCadastro.nome || cleanNome,
+        email: userCadastro.email || cleanEmail,
+        photo: userCadastro.photo || photoUrl
+      };
+      setUserCadastro(updatedCadastro);
+      localStorage.setItem("comunidade_user_cadastro", JSON.stringify(updatedCadastro));
+
+      playSuccessSound();
+      toast.success(`Bem-vindo(a), ${cleanNome}! Acesso liberado via Google.`);
+    } catch (err: any) {
+      console.error("Erro no login com Google:", err);
+      const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu domínio";
+      const errStr = (err?.code || err?.message || String(err)).toLowerCase();
+      let errorMsg = "Não foi possível conectar com o Google.";
+      
+      if (errStr.includes("unauthorized-domain") || errStr.includes("auth/unauthorized-domain")) {
+        errorMsg = `O domínio "${currentHost}" precisa ser autorizado no Firebase Console para o login com Google. Digite seu e-mail/nome e a senha do portal acima para entrar direto.`;
+      } else if (errStr.includes("popup-closed-by-user")) {
+        errorMsg = "A janela do Google foi fechada antes de concluir o acesso.";
+      } else if (errStr.includes("popup-blocked")) {
+        errorMsg = "O navegador bloqueou a janela pop-up do Google. Permita pop-ups para continuar.";
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+
+      setLoginError(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setIsGoogleLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -608,6 +780,66 @@ export default function ComunidadeDashboard({
   // Alphabet A to Z generator
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
+  // Month labels helper
+  const MONTHS_NAMES = [
+    { num: 1, name: "Janeiro" },
+    { num: 2, name: "Fevereiro" },
+    { num: 3, name: "Março" },
+    { num: 4, name: "Abril" },
+    { num: 5, name: "Maio" },
+    { num: 6, name: "Junho" },
+    { num: 7, name: "Julho" },
+    { num: 8, name: "Agosto" },
+    { num: 9, name: "Setembro" },
+    { num: 10, name: "Outubro" },
+    { num: 11, name: "Novembro" },
+    { num: 12, name: "Dezembro" }
+  ];
+
+  // Helper to extract day and month from birthday string (DD/MM/YYYY or YYYY-MM-DD)
+  const getMemberBirthdayInfo = (birthdayStr?: string) => {
+    if (!birthdayStr) return { day: null, month: null, formatted: "" };
+    const str = birthdayStr.trim();
+    const slashParts = str.split("/");
+    if (slashParts.length >= 2) {
+      const d = parseInt(slashParts[0], 10);
+      const m = parseInt(slashParts[1], 10);
+      if (!isNaN(d) && !isNaN(m)) {
+        return { 
+          day: d, 
+          month: m, 
+          formatted: `${d.toString().padStart(2, "0")}/${m.toString().padStart(2, "0")}` 
+        };
+      }
+    }
+    const dashParts = str.split("-");
+    if (dashParts.length >= 3) {
+      const d = parseInt(dashParts[2], 10);
+      const m = parseInt(dashParts[1], 10);
+      if (!isNaN(d) && !isNaN(m)) {
+        return { 
+          day: d, 
+          month: m, 
+          formatted: `${d.toString().padStart(2, "0")}/${m.toString().padStart(2, "0")}` 
+        };
+      }
+    }
+    return { day: null, month: null, formatted: "" };
+  };
+
+  // Current active month's birthdays
+  const currentMonthBirthdays = useMemo(() => {
+    const activeM = selectedMonth === "ALL" ? (new Date().getMonth() + 1) : selectedMonth;
+    return members.filter((m) => {
+      const info = getMemberBirthdayInfo(m.birthday);
+      return info.month === activeM;
+    }).sort((a, b) => {
+      const aInfo = getMemberBirthdayInfo(a.birthday);
+      const bInfo = getMemberBirthdayInfo(b.birthday);
+      return (aInfo.day || 0) - (bInfo.day || 0);
+    });
+  }, [members, selectedMonth]);
+
   // Process filters
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
@@ -630,12 +862,24 @@ export default function ComunidadeDashboard({
 
       // 4. Alphabet A-Z filtering
       if (alphabetLetter) {
-        return (member.name || "").trim().toUpperCase().startsWith(alphabetLetter);
+        if (!(member.name || "").trim().toUpperCase().startsWith(alphabetLetter)) {
+          return false;
+        }
+      }
+
+      // 5. Birthday Month Filter (if onlyBirthdaysFilter is active)
+      if (onlyBirthdaysFilter) {
+        const info = getMemberBirthdayInfo(member.birthday);
+        if (selectedMonth !== "ALL") {
+          if (info.month !== selectedMonth) return false;
+        } else {
+          if (!info.month) return false;
+        }
       }
 
       return true;
     });
-  }, [members, searchTerm, selectedBranch, selectedCity, alphabetLetter]);
+  }, [members, searchTerm, selectedBranch, selectedCity, alphabetLetter, onlyBirthdaysFilter, selectedMonth]);
 
   // Handle submissions
   const handleAddMemberSubmit = (e: React.FormEvent) => {
@@ -754,41 +998,28 @@ export default function ComunidadeDashboard({
             </div>
           )}
 
-          {/* E-mail field (Hidden as requested) */}
-          <div className="hidden">
-            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block">
-              E-mail Autorizado
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-zinc-500">
-                <Mail className="w-4 h-4" />
-              </span>
-              <input
-                type="email"
-                placeholder="nome@exemplo.com"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-stone-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-green-500/60 focus:ring-1 focus:ring-green-500/60 transition font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Nome field (nome livre - qualquer nome) */}
+          {/* Identificador: E-mail ou Nome */}
           <div className="space-y-1.5 text-left">
-            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block">
-              NOME
+            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block flex items-center justify-between">
+              <span>E-MAIL OU NOME DO MEMBRO</span>
+              <span className="text-zinc-500 text-[9px] lowercase font-normal">(use seu e-mail ou nome)</span>
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-zinc-500">
-                <User className="w-4 h-4" />
+                <User className="w-4 h-4 text-green-400" />
               </span>
               <input
                 type="text"
                 required
-                placeholder="Qualquer nome é aceito"
+                placeholder="ex: seu@email.com ou seu nome"
                 value={loginNome}
-                onChange={(e) => setLoginNome(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-stone-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-green-500/60 focus:ring-1 focus:ring-green-500/60 transition"
+                onChange={(e) => {
+                  setLoginNome(e.target.value);
+                  if (e.target.value.includes("@")) {
+                    setLoginEmail(e.target.value);
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-3 bg-stone-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-green-500/60 focus:ring-1 focus:ring-green-500/60 transition font-mono"
               />
             </div>
           </div>
@@ -820,9 +1051,36 @@ export default function ComunidadeDashboard({
 
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-black font-display font-black text-xs uppercase tracking-widest rounded-xl transition shadow-[0_4px_15px_rgba(34,197,94,0.3)] active:scale-[0.98]"
+            className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-black font-display font-black text-xs uppercase tracking-widest rounded-xl transition shadow-[0_4px_15px_rgba(34,197,94,0.3)] active:scale-[0.98] cursor-pointer"
           >
             Acessar Painel
+          </button>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-2 pt-1">
+            <div className="h-px bg-zinc-800 flex-1" />
+            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest">ou</span>
+            <div className="h-px bg-zinc-800 flex-1" />
+          </div>
+
+          {/* Google 1-Click Login Button */}
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={isGoogleLoading}
+            className="w-full py-3 px-4 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-3 transition shadow-md active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+          >
+            {isGoogleLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-green-400" />
+            ) : (
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+            )}
+            <span>{isGoogleLoading ? "Conectando ao Google..." : "Entrar com o Google (1 Clique)"}</span>
           </button>
         </form>
 
@@ -901,17 +1159,49 @@ export default function ComunidadeDashboard({
             )}
           </div>
         </div>
-        <button
-          onClick={() => { playClickSound(650, "sine"); openCadastroModal(); }}
-          className={`px-4 py-2 font-mono text-xs font-black uppercase rounded-xl transition shrink-0 duration-200 ${
-            userCadastro.nome
-              ? "bg-zinc-900 border border-emerald-500/30 hover:border-emerald-500 text-emerald-400 hover:text-white"
-              : "bg-amber-500 text-black hover:bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.25)]"
-          }`}
-        >
-          {userCadastro.nome ? "Atualizar Dados" : "Preencher Cadastro"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            onClick={handleCheckAuthStatus}
+            disabled={isCheckingAuth}
+            className="px-3.5 py-2 font-mono text-[11px] font-bold uppercase rounded-xl transition duration-200 bg-stone-900 border border-blue-500/40 hover:border-blue-400 text-blue-400 hover:text-white flex items-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
+            title="Executa diagnóstico de autenticação e exibe no console os dados do Firestore"
+          >
+            {isCheckingAuth ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+            ) : (
+              <Terminal className="w-3.5 h-3.5 text-blue-400" />
+            )}
+            <span>{isCheckingAuth ? "Verificando..." : "Verificar Status de Autenticação"}</span>
+          </button>
+
+          <button
+            onClick={() => { playClickSound(650, "sine"); openCadastroModal(); }}
+            className={`px-4 py-2 font-mono text-xs font-black uppercase rounded-xl transition shrink-0 duration-200 ${
+              userCadastro.nome
+                ? "bg-zinc-900 border border-emerald-500/30 hover:border-emerald-500 text-emerald-400 hover:text-white"
+                : "bg-amber-500 text-black hover:bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.25)]"
+            }`}
+          >
+            {userCadastro.nome ? "Atualizar Dados" : "Preencher Cadastro"}
+          </button>
+        </div>
       </div>
+
+      {/* DIAGNOSTIC MINI BANNER IF CHECKED */}
+      {authDiagResult && (
+        <div className="p-3.5 bg-blue-950/20 border border-blue-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-mono animate-fade-in">
+          <div className="flex items-center gap-2 text-blue-300">
+            <Activity className="w-4 h-4 text-blue-400 shrink-0 animate-pulse" />
+            <span>
+              <strong>Diagnóstico ({authDiagResult.verifiedAt}):</strong> Usuário: <strong>{authDiagResult.name}</strong> ({authDiagResult.email}) | Status: <strong className="text-emerald-400">{authDiagResult.status}</strong> | Firestore: <strong>{authDiagResult.isFirestoreSynced ? "Sincronizado" : "Pendente"}</strong>
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+            <span>Última atualização: <strong className="text-white">{authDiagResult.firestoreUpdatedAt}</strong></span>
+            <span className="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">F12 Console</span>
+          </div>
+        </div>
+      )}
 
       {/* NEW PRESENTATION & MESSAGE BOARD */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
@@ -1165,18 +1455,167 @@ export default function ComunidadeDashboard({
       {/* RENDER MEMBERS DIRECTORY */}
       {activeTab === "members" && (
         <div className="space-y-6">
+
+          {/* BIRTHDAY HIGHLIGHTS BANNER (ANIVERSARIANTES DO MÊS) */}
+          <div className="p-5 rounded-3xl bg-gradient-to-br from-purple-950/40 via-stone-950 to-pink-950/30 border border-purple-500/30 shadow-2xl relative overflow-hidden">
+            {/* Ambient glow accent */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+            
+            <div className="relative z-10 space-y-4">
+              {/* Header with Title and Month selector */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-purple-500/20 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-pink-500/30">
+                    <Cake className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-display font-black text-base text-white tracking-wide uppercase flex items-center gap-1.5">
+                        🎉 Aniversariantes {selectedMonth === "ALL" ? "do Ano" : `de ${MONTHS_NAMES.find(m => m.num === selectedMonth)?.name}`}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-pink-500/20 text-pink-300 border border-pink-500/40">
+                        {currentMonthBirthdays.length} {currentMonthBirthdays.length === 1 ? "membro" : "membros"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 font-mono">
+                      Celebre e parabenize nossos membros VIP da comunidade!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick month pills filter */}
+                <div className="flex flex-wrap items-center gap-1.5 self-stretch md:self-auto overflow-x-auto pb-1 md:pb-0">
+                  {MONTHS_NAMES.map((m) => {
+                    const isSelected = selectedMonth === m.num;
+                    const count = members.filter(mem => getMemberBirthdayInfo(mem.birthday).month === m.num).length;
+                    return (
+                      <button
+                        key={m.num}
+                        onClick={() => {
+                          playClickSound(600, "sine");
+                          setSelectedMonth(m.num);
+                        }}
+                        className={`px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold transition flex items-center gap-1 ${
+                          isSelected
+                            ? "bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md shadow-pink-500/30"
+                            : count > 0
+                            ? "bg-stone-900/90 text-zinc-300 hover:text-white border border-zinc-800 hover:border-pink-500/40"
+                            : "bg-stone-950/60 text-zinc-600 border border-zinc-900 hover:text-zinc-400"
+                        }`}
+                        title={`${m.name}: ${count} aniversariante(s)`}
+                      >
+                        <span>{m.name.slice(0, 3)}</span>
+                        {count > 0 && (
+                          <span className={`text-[9px] px-1 py-0.2 rounded-full font-black ${isSelected ? "bg-white/30 text-white" : "bg-purple-500/20 text-purple-300"}`}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => {
+                      playClickSound(550, "sine");
+                      setSelectedMonth("ALL");
+                    }}
+                    className={`px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold transition ${
+                      selectedMonth === "ALL"
+                        ? "bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md"
+                        : "bg-stone-900 text-zinc-400 hover:text-white border border-zinc-800"
+                    }`}
+                  >
+                    Todos
+                  </button>
+                </div>
+              </div>
+
+              {/* Birthdays members horizontal card track */}
+              {currentMonthBirthdays.length === 0 ? (
+                <div className="py-6 text-center rounded-2xl bg-black/40 border border-dashed border-zinc-800/80">
+                  <Cake className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 font-mono">
+                    Nenhum aniversariante registrado neste mês selecionado.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {currentMonthBirthdays.map((m) => {
+                    const bdayInfo = getMemberBirthdayInfo(m.birthday);
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() => {
+                          playClickSound(520, "sine");
+                          setSelectedMember(m);
+                        }}
+                        className="p-3.5 rounded-2xl bg-stone-900/90 border border-pink-500/30 hover:border-pink-500/70 hover:shadow-[0_0_20px_rgba(236,72,153,0.25)] transition-all cursor-pointer flex items-center gap-3 relative group overflow-hidden"
+                      >
+                        {/* Birthday day badge */}
+                        <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-pink-500 to-purple-600 text-white font-mono text-[9px] font-black shadow-sm">
+                          <Cake className="w-2.5 h-2.5" />
+                          <span>Dia {bdayInfo.day ? bdayInfo.day.toString().padStart(2, "0") : bdayInfo.formatted}</span>
+                        </div>
+
+                        {/* Avatar */}
+                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-950 border border-pink-500/40 shrink-0 relative shadow-md">
+                          <PositionableImage
+                            src={m.photo || DEFAULT_MEMBER_AVATAR}
+                            alt={m.name}
+                            className="w-full h-full object-cover"
+                            storageKey={`comunidade-member-bday-${m.id}`}
+                            editable={isAdmin}
+                          />
+                        </div>
+
+                        {/* Info & quick wish button */}
+                        <div className="min-w-0 flex-1 pr-12">
+                          <h5 className="font-bold text-xs text-white truncate group-hover:text-pink-300 transition">
+                            {m.name}
+                          </h5>
+                          <p className="text-[10px] text-zinc-400 font-mono truncate">
+                            {m.companyName || m.role}
+                          </p>
+                          
+                          {/* Direct Birthday WhatsApp button */}
+                          <div className="pt-1.5 flex items-center gap-2">
+                            <a
+                              href={
+                                m.whatsappLink || 
+                                (m.contact ? `https://wa.me/${m.contact.replace(/\D/g, '')}?text=${encodeURIComponent(`🎉 Parabéns pelo seu aniversário, ${m.name}! Desejo muito sucesso e realizações através da nossa Comunidade Do Começo ao Topo! 🎂🚀`)}` : `https://wa.me/5532984124860?text=${encodeURIComponent(`🎉 Parabéns pelo seu aniversário, ${m.name}!`)}`)
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => { e.stopPropagation(); playClickSound(700, "sine"); }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 rounded text-[9px] font-mono font-bold transition shadow-sm"
+                              title="Enviar parabéns no WhatsApp"
+                            >
+                              <Phone className="w-2.5 h-2.5 text-emerald-400" />
+                              <span>Parabenizar</span>
+                            </a>
+                            <span className="text-[9px] font-mono text-zinc-500">
+                              {bdayInfo.formatted}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
           
           {/* MULTI SEARCH AND FILTER BOX */}
           <div className="p-4 rounded-2xl bg-stone-950 border border-zinc-900 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
             
             {/* Input name filter block */}
-            <div className="md:col-span-4 relative">
+            <div className="md:col-span-3 relative">
               <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Pesquisar por nome, biografia, cargo..."
+                placeholder="Pesquisar por nome, cargo..."
                 className="w-full bg-black border border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-white focus:border-green-500 focus:ring-1 focus:ring-green-400 outline-none font-mono"
               />
             </div>
@@ -1275,6 +1714,26 @@ export default function ComunidadeDashboard({
               </div>
             </div>
 
+            {/* Birthday toggle filter button */}
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound(600, "sine");
+                  setOnlyBirthdaysFilter(prev => !prev);
+                }}
+                className={`w-full px-3 py-2 border rounded-xl text-[10px] font-mono font-bold uppercase flex items-center justify-center gap-1.5 transition ${
+                  onlyBirthdaysFilter
+                    ? "bg-gradient-to-r from-pink-500 to-purple-600 border-pink-400 text-white shadow-[0_0_12px_rgba(236,72,153,0.3)]"
+                    : "bg-stone-900/80 border-zinc-800 text-pink-400 hover:text-white hover:border-pink-500/40"
+                }`}
+                title="Filtrar apenas aniversariantes"
+              >
+                <Cake className="w-3.5 h-3.5" />
+                <span>{onlyBirthdaysFilter ? "🎂 Aniversários [ON]" : "🎂 Aniversários"}</span>
+              </button>
+            </div>
+
             {/* Clear filters trigger */}
             <div className="md:col-span-2">
               <button
@@ -1284,6 +1743,8 @@ export default function ComunidadeDashboard({
                   setSelectedBranch("TODAS");
                   setSelectedCity("TODAS");
                   setAlphabetLetter(null);
+                  setOnlyBirthdaysFilter(false);
+                  setSelectedMonth(new Date().getMonth() + 1);
                 }}
                 className="w-full px-3 py-2 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-950 text-zinc-400 hover:text-white transition text-[10px] font-mono font-bold uppercase rounded-xl flex items-center justify-center gap-1"
               >
@@ -1374,6 +1835,8 @@ export default function ComunidadeDashboard({
                   setSelectedBranch("TODAS");
                   setSelectedCity("TODAS");
                   setAlphabetLetter(null);
+                  setOnlyBirthdaysFilter(false);
+                  setSelectedMonth(new Date().getMonth() + 1);
                 }}
                 className="px-4 py-1.5 bg-green-500 text-black font-mono font-black text-[10px] uppercase rounded"
               >
@@ -1382,20 +1845,39 @@ export default function ComunidadeDashboard({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredMembers.map((m) => (
+              {filteredMembers.map((m) => {
+                const bdayInfo = getMemberBirthdayInfo(m.birthday);
+                const currentCalMonth = new Date().getMonth() + 1;
+                const isBirthdayThisMonth = bdayInfo.month === currentCalMonth;
+
+                return (
                 <div
                   key={m.id}
                   onClick={() => {
                     playClickSound(500, "sine");
                     setSelectedMember(m);
                   }}
-                  className="p-4 rounded-2xl bg-stone-950 border border-zinc-900 hover:border-pink-500/40 hover:shadow-[0_0_20px_rgba(236,72,153,0.15)] transition-all cursor-pointer flex flex-col justify-between gap-3 relative group"
+                  className={`p-4 rounded-2xl bg-stone-950 border transition-all cursor-pointer flex flex-col justify-between gap-3 relative group ${
+                    isBirthdayThisMonth
+                      ? "border-pink-500/60 shadow-[0_0_20px_rgba(236,72,153,0.18)] hover:border-pink-400 hover:shadow-[0_0_28px_rgba(236,72,153,0.3)]"
+                      : "border-zinc-900 hover:border-pink-500/40 hover:shadow-[0_0_20px_rgba(236,72,153,0.15)]"
+                  }`}
                 >
                   {/* Top badges and admin actions */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded bg-zinc-900 text-zinc-300 border border-zinc-800">
-                      📍 {m.city || "Juiz de Fora"}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded bg-zinc-900 text-zinc-300 border border-zinc-800">
+                        📍 {m.city || "Juiz de Fora"}
+                      </span>
+
+                      {/* Birthday badge if birthday in current calendar month */}
+                      {isBirthdayThisMonth && (
+                        <span className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono font-black rounded-md bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-sm animate-pulse" title={`Aniversariante do Mês! Dia ${bdayInfo.day}`}>
+                          <Cake className="w-3 h-3" />
+                          <span>ANIVERSARIANTE</span>
+                        </span>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-1.5">
                       {m.isVerified && (
@@ -1456,6 +1938,73 @@ export default function ComunidadeDashboard({
                     </p>
                   )}
 
+                  {/* Direct Contact Buttons (WhatsApp & Instagram) */}
+                  <div className="flex items-center gap-2 pt-1">
+                    {m.whatsappLink ? (
+                      <a
+                        href={m.whatsappLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.stopPropagation(); playClickSound(700, "sine"); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 hover:border-emerald-500/60 rounded-lg text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 transition"
+                        title="Conversar no WhatsApp"
+                      >
+                        <Phone className="w-3 h-3 text-emerald-400" />
+                        WhatsApp
+                      </a>
+                    ) : m.contact ? (
+                      <a
+                        href={`https://wa.me/${m.contact.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.stopPropagation(); playClickSound(700, "sine"); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 hover:border-emerald-500/60 rounded-lg text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 transition"
+                        title="Conversar no WhatsApp"
+                      >
+                        <Phone className="w-3 h-3 text-emerald-400" />
+                        WhatsApp
+                      </a>
+                    ) : (
+                      <a
+                        href={`https://wa.me/5532984124860?text=${encodeURIComponent(`Olá! Gostaria de conversar com ${m.name} da Comunidade Do Começo ao Topo.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.stopPropagation(); playClickSound(700, "sine"); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 hover:border-emerald-500/60 rounded-lg text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 transition"
+                        title="Conversar no WhatsApp"
+                      >
+                        <Phone className="w-3 h-3 text-emerald-400" />
+                        WhatsApp
+                      </a>
+                    )}
+
+                    {m.instagramLink ? (
+                      <a
+                        href={m.instagramLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.stopPropagation(); playClickSound(700, "sine"); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-pink-500/10 hover:bg-pink-500/25 border border-pink-500/30 hover:border-pink-500/60 rounded-lg text-[10px] font-mono font-bold text-pink-400 hover:text-pink-300 transition"
+                        title="Visitar Instagram"
+                      >
+                        <Globe className="w-3 h-3 text-pink-400" />
+                        Instagram
+                      </a>
+                    ) : (
+                      <a
+                        href="https://instagram.com/docomecoaotopo"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.stopPropagation(); playClickSound(700, "sine"); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 bg-pink-500/10 hover:bg-pink-500/25 border border-pink-500/30 hover:border-pink-500/60 rounded-lg text-[10px] font-mono font-bold text-pink-400 hover:text-pink-300 transition"
+                        title="Visitar Instagram"
+                      >
+                        <Globe className="w-3 h-3 text-pink-400" />
+                        Instagram
+                      </a>
+                    )}
+                  </div>
+
                   {/* Card Footer CTA */}
                   <div className="pt-2 border-t border-zinc-900/80 flex items-center justify-between text-[11px] text-zinc-500 font-mono">
                     <span className="group-hover:text-zinc-300 transition flex items-center gap-1">
@@ -1464,7 +2013,8 @@ export default function ComunidadeDashboard({
                     <ChevronRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-pink-400 group-hover:translate-x-0.5 transition-all" />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1729,7 +2279,7 @@ export default function ComunidadeDashboard({
                     onChange={(e) => setCadastroWhatsapp(e.target.value)} 
                     className="w-full bg-stone-900 border border-zinc-800 rounded-xl p-3 text-xs text-white focus:border-green-500 focus:outline-none"
                     required 
-                    placeholder="https://wa.me/5532999999999"
+                    placeholder="https://wa.me/5532984124860"
                   />
                 </div>
 
@@ -1910,8 +2460,17 @@ export default function ComunidadeDashboard({
                       {selectedMember.companyName}
                     </p>
                   )}
-                  <p className="text-xs text-zinc-500 font-mono">
-                    {selectedMember.role} • <span className="text-green-400">{selectedMember.branch}</span>
+                  <p className="text-xs text-zinc-500 font-mono flex items-center gap-2 flex-wrap">
+                    <span>{selectedMember.role}</span> • <span className="text-green-400">{selectedMember.branch}</span>
+                    {selectedMember.birthday && (
+                      <>
+                        • 
+                        <span className="inline-flex items-center gap-1 text-pink-400 font-bold bg-pink-500/10 px-2 py-0.5 rounded border border-pink-500/20">
+                          <Cake className="w-3 h-3 text-pink-400" />
+                          <span>Aniversário: {getMemberBirthdayInfo(selectedMember.birthday).formatted || selectedMember.birthday}</span>
+                        </span>
+                      </>
+                    )}
                   </p>
                 </div>
                 
@@ -1925,43 +2484,54 @@ export default function ComunidadeDashboard({
                       href={selectedMember.googleMapsUrl || `https://maps.google.com/?q=${encodeURIComponent(selectedMember.address)}`} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 hover:bg-stone-800 border border-zinc-800 rounded-lg text-[11px] font-mono text-zinc-300 hover:text-white transition group"
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 border border-zinc-800 hover:border-zinc-700 rounded-xl text-xs font-mono text-zinc-300 hover:text-white transition group shadow-sm"
                     >
-                      <MapPin className="w-3.5 h-3.5 text-blue-400 group-hover:animate-bounce" />
+                      <MapPin className="w-4 h-4 text-blue-400 group-hover:animate-bounce" />
                       Como Chegar
                     </a>
                   )}
-                  {selectedMember.whatsappLink && (
-                    <a 
-                      href={selectedMember.whatsappLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 hover:bg-stone-800 border border-zinc-800 rounded-lg text-[11px] font-mono text-zinc-300 hover:text-white transition group"
+
+                  {/* WhatsApp - Always visible for every member */}
+                  <a 
+                    href={
+                      selectedMember.whatsappLink || 
+                      (selectedMember.contact ? `https://wa.me/${selectedMember.contact.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${selectedMember.name}! Vi seu perfil na Comunidade Do Começo ao Topo.`)}` : `https://wa.me/5532984124860?text=${encodeURIComponent(`Olá! Gostaria de falar com ${selectedMember.name} da Comunidade Do Começo ao Topo.`)}`)
+                    } 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 hover:border-emerald-500/80 rounded-xl text-xs font-mono font-bold text-emerald-400 hover:text-emerald-300 transition group shadow-md shadow-emerald-950/20"
+                  >
+                    <Phone className="w-4 h-4 text-emerald-400 group-hover:scale-110 group-hover:rotate-12 transition-transform" />
+                    <span>WhatsApp</span>
+                    {selectedMember.contact && (
+                      <span className="text-[10px] text-emerald-500/80 font-normal">({selectedMember.contact})</span>
+                    )}
+                  </a>
+
+                  {/* Instagram - Always visible for every member */}
+                  <a 
+                    href={
+                      selectedMember.instagramLink || 
+                      (selectedMember.instagram ? `https://instagram.com/${selectedMember.instagram.replace(/[@\s]/g, '')}` : "https://instagram.com/docomecoaotopo")
+                    } 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-pink-950/40 hover:bg-pink-900/60 border border-pink-500/40 hover:border-pink-500/80 rounded-xl text-xs font-mono font-bold text-pink-400 hover:text-pink-300 transition group shadow-md shadow-pink-950/20"
+                  >
+                    <Globe className="w-4 h-4 text-pink-400 group-hover:scale-110 transition-transform" />
+                    <span>Instagram</span>
+                    {selectedMember.instagram && (
+                      <span className="text-[10px] text-pink-400/80 font-normal">({selectedMember.instagram})</span>
+                    )}
+                  </a>
+
+                  {selectedMember.email && (
+                    <a
+                      href={`mailto:${selectedMember.email}?subject=${encodeURIComponent(`Contato via Comunidade Do Começo ao Topo - ${selectedMember.name}`)}`}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 border border-zinc-800 hover:border-zinc-700 rounded-xl text-xs font-mono text-zinc-300 hover:text-white transition group"
                     >
-                      <Phone className="w-3.5 h-3.5 text-green-500 group-hover:rotate-12" />
-                      WhatsApp
-                    </a>
-                  )}
-                  {selectedMember.contact && !selectedMember.whatsappLink && (
-                    <a 
-                      href={`https://wa.me/${selectedMember.contact.replace(/\D/g, '')}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 hover:bg-stone-800 border border-zinc-800 rounded-lg text-[11px] font-mono text-zinc-300 hover:text-white transition group"
-                    >
-                      <Phone className="w-3.5 h-3.5 text-green-500 group-hover:rotate-12" />
-                      {selectedMember.contact}
-                    </a>
-                  )}
-                  {selectedMember.instagramLink && (
-                    <a 
-                      href={selectedMember.instagramLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 hover:bg-stone-800 border border-zinc-800 rounded-lg text-[11px] font-mono text-zinc-300 hover:text-white transition group"
-                    >
-                      <Globe className="w-3.5 h-3.5 text-pink-500 group-hover:scale-110" />
-                      Instagram
+                      <Mail className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+                      Email
                     </a>
                   )}
                 </div>

@@ -76,10 +76,13 @@ export default function PositionableImage({
       setDraftPosition(loadedPos);
 
       const savedSrc = localStorage.getItem(`${activeKey}_uploaded_src`);
-      if (savedSrc) {
+      if (savedSrc && !savedSrc.startsWith("blob:") && savedSrc !== "undefined" && savedSrc !== "null") {
         setUploadedSrc(savedSrc);
         setDraftUploadedSrc(savedSrc);
       } else {
+        if (savedSrc && savedSrc.startsWith("blob:")) {
+          localStorage.removeItem(`${activeKey}_uploaded_src`);
+        }
         setUploadedSrc(null);
         setDraftUploadedSrc(null);
       }
@@ -474,11 +477,39 @@ export default function PositionableImage({
   const normalizedDraft = normalizeUrl(draftUploadedSrc);
   const normalizedSrc = normalizeUrl(src);
 
-  const finalSrc = isValidSrc(normalizedDraft) ? normalizedDraft : (isValidSrc(normalizedSrc) ? normalizedSrc : null);
+  // Active attempted source state
+  const [activeSrcOverride, setActiveSrcOverride] = useState<string | null>(null);
+
+  const finalSrc = activeSrcOverride || 
+    (isValidSrc(normalizedDraft) ? normalizedDraft : (isValidSrc(normalizedSrc) ? normalizedSrc : null));
 
   useEffect(() => {
+    setActiveSrcOverride(null);
     setHasError(false);
-  }, [finalSrc]);
+  }, [src, draftUploadedSrc]);
+
+  const handleImageError = () => {
+    console.warn("Image load failed in PositionableImage for:", finalSrc);
+    
+    // If custom uploaded/draft failed, fall back to default component src
+    if (finalSrc === normalizedDraft && isValidSrc(normalizedSrc) && normalizedSrc !== normalizedDraft) {
+      if (activeKey) {
+        localStorage.removeItem(`${activeKey}_uploaded_src`);
+      }
+      setDraftUploadedSrc(null);
+      setUploadedSrc(null);
+      setActiveSrcOverride(normalizedSrc);
+      return;
+    }
+
+    // Specific fallback for Regina's profile in Quem Somos
+    if (activeKey?.includes("quem-somos") && finalSrc !== "/regina-profile.jpg") {
+      setActiveSrcOverride("/regina-profile.jpg");
+      return;
+    }
+
+    setHasError(true);
+  };
 
   const isAbsolute = className?.includes("absolute");
 
@@ -496,10 +527,7 @@ export default function PositionableImage({
           src={finalSrc}
           alt={alt}
           referrerPolicy={props.referrerPolicy || "no-referrer"}
-          onError={() => {
-            console.warn("Error loading image in PositionableImage, falling back. Path: ", finalSrc);
-            setHasError(true);
-          }}
+          onError={handleImageError}
           className="w-full h-full object-cover select-none pointer-events-none"
           style={{
             ...style,

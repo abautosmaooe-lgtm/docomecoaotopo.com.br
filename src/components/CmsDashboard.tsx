@@ -40,12 +40,32 @@ import {
   Upload,
   Camera,
   X,
-  Users
+  Users,
+  MessageCircle,
+  Mail,
+  Search,
+  UserPlus,
+  ExternalLink,
+  Copy,
+  ShieldAlert,
+  Clock,
+  Send,
+  Sparkle
 } from "lucide-react";
 import { toast } from "sonner";
 import { NewsArticle, CategoryType } from "../types";
 import { playClickSound, playSuccessSound, playNegativeSound } from "../utils/audio";
 import ImageCropperModal from "./ImageCropperModal";
+import {
+  getAllPortalUsers,
+  updatePortalUserStatus,
+  deletePortalUser,
+  generateWhatsAppApprovalLink,
+  generateEmailApprovalLink,
+  PortalUserRecord,
+  syncPortalUser,
+  getAllMatriculasFromFirestore
+} from "../services/userService";
 
 interface LogoConfigType {
   customImageUrl: string;
@@ -179,7 +199,11 @@ export default function CmsDashboard({
   const [endMapViewer, setEndMapViewer] = useState(portalPagesConfig?.enderecoMapViewer || "");
 
   const [contEmail, setContEmail] = useState(portalPagesConfig?.contatoEmail || "");
-  const [contWhatsapp, setContWhatsapp] = useState(portalPagesConfig?.contatoWhatsapp || "");
+  const [contWhatsapp, setContWhatsapp] = useState(
+    (!portalPagesConfig?.contatoWhatsapp || portalPagesConfig.contatoWhatsapp.includes("9999"))
+      ? "+55 (32) 98412-4860"
+      : portalPagesConfig.contatoWhatsapp
+  );
   const [contInstagram, setContInstagram] = useState(portalPagesConfig?.contatoInstagram || "");
 
   // EXTENDED PAGES LOCAL STATES
@@ -230,28 +254,24 @@ export default function CmsDashboard({
   const [communityEnrollments, setCommunityEnrollments] = useState<any[]>([]);
   const [loadingEnrollments, setLoadingEnrollments] = useState(false);
 
-  const [usersList, setUsersList] = useState<any[]>([]);
+  const [usersList, setUsersList] = useState<PortalUserRecord[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState("");
+  const [userStatusFilter, setUserStatusFilter] = useState<"all" | "approved" | "trial" | "suspended" | "pending">("all");
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPhone, setNewUserPhone] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"membro" | "vip" | "embaixador" | "anunciante" | "admin">("vip");
+  const [newUserStatus, setNewUserStatus] = useState<"approved" | "trial" | "suspended">("approved");
 
   const fetchUsersList = async () => {
     setLoadingUsers(true);
     try {
-      const res = await fetch("/api/users");
-      const data = await res.json();
-      if (data && Array.isArray(data.users) && data.users.length > 0) {
-        setUsersList(data.users);
-      } else {
-        setUsersList([
-          { email: "diretoria@portal.com", name: "Diretoria (AI Studio)", photoUrl: "https://api.dicebear.com/7.x/pixel-art/svg?seed=diretoria", status: "approved", createdAt: new Date().toISOString() },
-          { email: "admin@docomecoatopo.com.br", name: "Sérgio (Regina Admin)", photoUrl: "https://api.dicebear.com/7.x/bottts-neutral/svg?seed=admin", status: "approved", createdAt: new Date().toISOString() },
-          { email: "membro@portal.com", name: "Membro VIP Teste", photoUrl: "https://api.dicebear.com/7.x/pixel-art/svg?seed=membro", status: "trial", trialEndsAt: new Date(Date.now() + 14*24*60*60*1000).toISOString(), createdAt: new Date().toISOString() }
-        ]);
-      }
+      const list = await getAllPortalUsers();
+      setUsersList(list);
     } catch (e) {
       console.error("Error loading users list:", e);
-      setUsersList([
-        { email: "diretoria@portal.com", name: "Diretoria (AI Studio)", photoUrl: "https://api.dicebear.com/7.x/pixel-art/svg?seed=diretoria", status: "approved", createdAt: new Date().toISOString() }
-      ]);
     }
     setLoadingUsers(false);
   };
@@ -262,23 +282,63 @@ export default function CmsDashboard({
     }
   }, [activeAdminTab]);
 
-  const handleUpdateUserStatus = async (email: string, newStatus: string) => {
+  const handleUpdateUserStatus = async (
+    email: string,
+    newStatus: "approved" | "trial" | "suspended" | "pending",
+    options?: { role?: any; trialDays?: number; phone?: string }
+  ) => {
+    playClickSound(600, "sine");
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(email)}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (res.ok) {
-        setUsersList(prev => prev.map(u => u.email === email ? { ...u, status: newStatus } : u));
-        toast.success(`Status de ${email} alterado para ${newStatus.toUpperCase()}`);
-      } else {
-        toast.error("Erro ao atualizar status do usuário.");
+      const res = await updatePortalUserStatus(email, newStatus, options);
+      if (res && res.user) {
+        setUsersList(prev => prev.map(u => u.email.toLowerCase() === email.toLowerCase() ? { ...u, ...res.user } : u));
+        playSuccessSound();
+        const statusLabel = newStatus === "approved" ? "APROVADO / PREMIUM" : newStatus === "trial" ? "TESTE 14 DIAS" : "SUSPENSO / EM ANÁLISE";
+        toast.success(`Status de ${email} atualizado para ${statusLabel}`);
       }
     } catch (e) {
       console.error("Error updating status:", e);
-      setUsersList(prev => prev.map(u => u.email === email ? { ...u, status: newStatus } : u));
-      toast.success(`Status local atualizado para ${newStatus.toUpperCase()}`);
+      setUsersList(prev => prev.map(u => u.email.toLowerCase() === email.toLowerCase() ? { ...u, status: newStatus } : u));
+      toast.success(`Status de ${email} salvo localmente`);
+    }
+  };
+
+  const handleDeleteUserRecord = async (email: string) => {
+    if (!window.confirm(`Tem certeza que deseja excluir o registro de ${email}?`)) return;
+    try {
+      await deletePortalUser(email);
+      setUsersList(prev => prev.filter(u => u.email.toLowerCase() !== email.toLowerCase()));
+      toast.success(`Usuário ${email} removido`);
+    } catch (e) {
+      console.error("Error deleting user:", e);
+      toast.error("Erro ao remover usuário");
+    }
+  };
+
+  const handleCreateManualUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserEmail.trim()) {
+      toast.error("Informe o e-mail do usuário");
+      return;
+    }
+    try {
+      const created = await syncPortalUser({
+        email: newUserEmail.trim(),
+        name: newUserName.trim() || undefined,
+        phone: newUserPhone.trim() || undefined
+      });
+      await updatePortalUserStatus(created.email, newUserStatus, {
+        role: newUserRole,
+        phone: newUserPhone.trim() || undefined
+      });
+      toast.success(`Usuário ${created.email} cadastrado e liberado com sucesso!`);
+      setShowAddUserModal(false);
+      setNewUserName("");
+      setNewUserEmail("");
+      setNewUserPhone("");
+      fetchUsersList();
+    } catch (err: any) {
+      toast.error("Erro ao cadastrar usuário: " + err.message);
     }
   };
 
@@ -286,15 +346,46 @@ export default function CmsDashboard({
     if (activeAdminTab === "enrollments") {
       const loadEnrollments = async () => {
         setLoadingEnrollments(true);
+        const map = new Map<string, any>();
         try {
+          // 1. Fetch directly from Firestore collection 'matriculas'
+          const fsMatriculas = await getAllMatriculasFromFirestore();
+          fsMatriculas.forEach(m => {
+            if (m && (m.id || m.email || m.name)) {
+              const key = m.id || m.email || m.whatsapp || `${m.name}_${m.createdAt}`;
+              map.set(key, {
+                id: m.id,
+                name: m.name || m.nome || "Membro",
+                whatsapp: m.whatsapp || m.phone || "",
+                plan: m.plan || m.plano || "Membro Comunidade",
+                sector: m.sector || m.setor || "Empreendedorismo",
+                email: m.email || "",
+                createdAt: m.createdAt || new Date().toISOString()
+              });
+            }
+          });
+        } catch (fsErr) {
+          console.warn("Error reading matriculas from Firestore:", fsErr);
+        }
+
+        try {
+          // 2. Fetch from backend API
           const res = await fetch("/api/published-data");
           const data = await res.json();
-          if (data && data.community_enrollments) {
-            setCommunityEnrollments(data.community_enrollments);
+          if (data && data.community_enrollments && Array.isArray(data.community_enrollments)) {
+            data.community_enrollments.forEach((e: any) => {
+              const key = e.id || e.email || e.whatsapp || `${e.name}_${e.createdAt}`;
+              if (!map.has(key)) {
+                map.set(key, e);
+              }
+            });
           }
         } catch (e) {
-          console.error("Error loading enrollments", e);
+          console.error("Error loading enrollments API:", e);
         }
+
+        const list = Array.from(map.values()).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        setCommunityEnrollments(list);
         setLoadingEnrollments(false);
       };
       loadEnrollments();
@@ -319,7 +410,11 @@ export default function CmsDashboard({
       setEndMapEmbed(portalPagesConfig.enderecoMapEmbed || "");
       setEndMapViewer(portalPagesConfig.enderecoMapViewer || "");
       setContEmail(portalPagesConfig.contatoEmail || "");
-      setContWhatsapp(portalPagesConfig.contatoWhatsapp || "");
+      setContWhatsapp(
+        (!portalPagesConfig.contatoWhatsapp || portalPagesConfig.contatoWhatsapp.includes("9999"))
+          ? "+55 (32) 98412-4860"
+          : portalPagesConfig.contatoWhatsapp
+      );
       setContInstagram(portalPagesConfig.contatoInstagram || "");
 
       // Sync Extended properties
@@ -618,9 +713,9 @@ export default function CmsDashboard({
                 : "text-zinc-400 hover:bg-zinc-900/60 hover:text-white"
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span className="flex-1">Relatórios de Matrícula</span>
-            <span className="text-[8px] bg-pink-500 text-white font-mono font-bold px-1.5 py-0.5 rounded-full">VIP</span>
+            <Users className="w-4 h-4 text-pink-400" />
+            <span className="flex-1">Matrículas & Planos</span>
+            <span className="text-[8px] bg-pink-500 text-white font-mono font-bold px-1.5 py-0.5 rounded-full">PLANOS</span>
           </button>
           
           <button
@@ -632,8 +727,8 @@ export default function CmsDashboard({
             }`}
           >
             <UserCheck className="w-4 h-4 text-amber-400" />
-            <span className="flex-1">Gestão de Usuários</span>
-            <span className="text-[8px] bg-amber-500 text-black font-mono font-bold px-1.5 py-0.5 rounded-full">NOVO</span>
+            <span className="flex-1">Gestão de Usuários & Acessos</span>
+            <span className="text-[8px] bg-amber-500 text-black font-mono font-bold px-1.5 py-0.5 rounded-full">LIBERAÇÃO</span>
           </button>
         </nav>
 
@@ -758,8 +853,8 @@ export default function CmsDashboard({
                   <BarChart3 className="w-4 h-4 text-green-400" />
                   <span>Real-Time Cliques por Matéria (Top 7)</span>
                 </h4>
-                <div className="h-56 min-h-[224px] w-full text-[10px] font-mono">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-56 min-h-[224px] w-full min-w-0 text-[10px] font-mono">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                     <BarChart data={barChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1c1c1e" />
                       <XAxis dataKey="name" stroke="#737373" />
@@ -776,8 +871,8 @@ export default function CmsDashboard({
                   <Activity className="w-4 h-4 text-pink-400" />
                   <span>Crescimento de Cliques e Newsletter</span>
                 </h4>
-                <div className="h-56 min-h-[224px] w-full text-[10px] font-mono">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-56 min-h-[224px] w-full min-w-0 text-[10px] font-mono">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                     <AreaChart data={lineHistoryData}>
                       <defs>
                         <linearGradient id="colorAssin" x1="0" y1="0" x2="0" y2="1">
@@ -1436,30 +1531,119 @@ export default function CmsDashboard({
         {/* TAB 8: USERS MANAGEMENT (APPROVALS & STATUS) */}
         {activeAdminTab === ("users" as any) && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Header & Stats */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                 <h3 className="font-display font-black text-2xl text-white uppercase tracking-tight flex items-center gap-2.5">
                   <UserCheck className="w-6 h-6 text-amber-400" />
-                  <span>Gestão de Usuários & Aprovações</span>
+                  <span>Gestão de Usuários & Aprovação de Acessos</span>
                 </h3>
                 <p className="text-zinc-400 text-sm mt-1">
-                  Controle os acessos ao painel e aprove membros com 1 clique (Aprovado / Teste 14 Dias / Suspenso).
+                  Gerencie cadastros pendentes, aprove membros VIP em 1 clique e envie confirmação automática via WhatsApp ou E-mail.
                 </p>
               </div>
-              <button
-                onClick={fetchUsersList}
-                disabled={loadingUsers}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2 self-start sm:self-auto transition"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? "animate-spin text-green-400" : ""}`} />
-                <span>Atualizar Lista</span>
-              </button>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  onClick={() => setShowAddUserModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-bold rounded-xl text-xs font-mono uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-amber-500/20 transition cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>+ Novo Membro Manual</span>
+                </button>
+                <button
+                  onClick={fetchUsersList}
+                  disabled={loadingUsers}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2 transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? "animate-spin text-amber-400" : ""}`} />
+                  <span>Atualizar</span>
+                </button>
+              </div>
             </div>
 
+            {/* Metric counters */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              <div className="bg-zinc-950 border border-zinc-900 rounded-xl p-3.5">
+                <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider block">Total Cadastrados</span>
+                <span className="text-2xl font-black text-white font-mono mt-1 block">{usersList.length}</span>
+              </div>
+              <div className="bg-zinc-950 border border-green-900/40 rounded-xl p-3.5">
+                <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider block">Aprovados / VIP</span>
+                <span className="text-2xl font-black text-green-400 font-mono mt-1 block">
+                  {usersList.filter(u => u.status === "approved").length}
+                </span>
+              </div>
+              <div className="bg-zinc-950 border border-amber-900/40 rounded-xl p-3.5">
+                <span className="text-[10px] text-amber-400 font-mono uppercase tracking-wider block">Em Teste 14D</span>
+                <span className="text-2xl font-black text-amber-400 font-mono mt-1 block">
+                  {usersList.filter(u => u.status === "trial").length}
+                </span>
+              </div>
+              <div className="bg-zinc-950 border border-red-900/40 rounded-xl p-3.5">
+                <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider block">Pendentes / Em Análise</span>
+                <span className="text-2xl font-black text-red-400 font-mono mt-1 block">
+                  {usersList.filter(u => u.status === "suspended" || u.status === "pending" || !u.status).length}
+                </span>
+              </div>
+            </div>
+
+            {/* Filters and Search Bar */}
+            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={userSearchTerm}
+                  onChange={(e) => setUserSearchTerm(e.target.value)}
+                  placeholder="Buscar por nome, e-mail..."
+                  className="w-full pl-10 pr-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                <button
+                  onClick={() => setUserStatusFilter("all")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition cursor-pointer whitespace-nowrap ${
+                    userStatusFilter === "all" ? "bg-amber-400 text-zinc-950" : "bg-zinc-900 text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  Todos ({usersList.length})
+                </button>
+                <button
+                  onClick={() => setUserStatusFilter("suspended")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition cursor-pointer whitespace-nowrap ${
+                    userStatusFilter === "suspended" ? "bg-red-500 text-white" : "bg-zinc-900 text-red-400 hover:text-white"
+                  }`}
+                >
+                  Pendentes ({usersList.filter(u => u.status === "suspended" || u.status === "pending" || !u.status).length})
+                </button>
+                <button
+                  onClick={() => setUserStatusFilter("approved")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition cursor-pointer whitespace-nowrap ${
+                    userStatusFilter === "approved" ? "bg-green-500 text-zinc-950 font-black" : "bg-zinc-900 text-green-400 hover:text-white"
+                  }`}
+                >
+                  Aprovados ({usersList.filter(u => u.status === "approved").length})
+                </button>
+                <button
+                  onClick={() => setUserStatusFilter("trial")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition cursor-pointer whitespace-nowrap ${
+                    userStatusFilter === "trial" ? "bg-amber-500 text-zinc-950 font-black" : "bg-zinc-900 text-amber-400 hover:text-white"
+                  }`}
+                >
+                  Teste 14d ({usersList.filter(u => u.status === "trial").length})
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
             <div className="bg-zinc-950 border border-zinc-900 rounded-2xl overflow-hidden shadow-2xl">
               <div className="p-4 border-b border-zinc-900 flex justify-between items-center bg-zinc-900/40">
-                <h4 className="font-bold text-white text-sm">Usuários Cadastrados ({usersList.length})</h4>
-                <div className="text-[10px] text-zinc-500 font-mono">Aprovação Manual Requerida</div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse"></span>
+                  <h4 className="font-bold text-white text-sm">Lista de Usuários no Banco de Dados</h4>
+                </div>
+                <div className="text-[10px] text-zinc-500 font-mono">Sincronizado com Firestore</div>
               </div>
               
               <div className="overflow-x-auto">
@@ -1467,86 +1651,272 @@ export default function CmsDashboard({
                   <thead>
                     <tr className="border-b border-zinc-900 bg-zinc-900/30 text-[10px] text-zinc-500 uppercase font-mono tracking-widest">
                       <th className="p-4">Usuário</th>
-                      <th className="p-4">E-mail</th>
-                      <th className="p-4">Status Atual</th>
-                      <th className="p-4">Data Cadastro</th>
-                      <th className="p-4 text-right">Ações de Controle</th>
+                      <th className="p-4">E-mail & Contato</th>
+                      <th className="p-4">Status de Acesso</th>
+                      <th className="p-4">Função / Perfil</th>
+                      <th className="p-4 text-right">Ações de Liberação & Contato</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900/50 text-xs text-zinc-300">
                     {loadingUsers ? (
                       <tr>
-                        <td colSpan={5} className="p-8 text-center text-zinc-500 font-mono">Carregando usuários...</td>
+                        <td colSpan={5} className="p-8 text-center text-zinc-500 font-mono">Carregando usuários do portal...</td>
                       </tr>
-                    ) : usersList.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="p-8 text-center text-zinc-500 font-mono">Nenhum usuário encontrado.</td>
-                      </tr>
-                    ) : (
-                      usersList.map((u, idx) => (
-                        <tr key={u.email || idx} className="hover:bg-zinc-900/40 transition">
-                          <td className="p-4 flex items-center gap-3">
-                            <img
-                              src={u.photoUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(u.email || 'user')}`}
-                              alt={u.name || "Foto"}
-                              className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 object-cover"
-                            />
-                            <div>
-                              <div className="font-bold text-white">{u.name || "Usuário"}</div>
-                              {u.email === "diretoria@portal.com" && (
-                                <span className="text-[9px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono font-bold">Admin Master</span>
+                    ) : (() => {
+                      const filtered = usersList.filter(u => {
+                        const matchSearch =
+                          !userSearchTerm ||
+                          (u.name && u.name.toLowerCase().includes(userSearchTerm.toLowerCase())) ||
+                          (u.email && u.email.toLowerCase().includes(userSearchTerm.toLowerCase())) ||
+                          (u.phone && u.phone.includes(userSearchTerm));
+                        
+                        if (!matchSearch) return false;
+                        if (userStatusFilter === "all") return true;
+                        if (userStatusFilter === "suspended") return u.status === "suspended" || u.status === "pending" || !u.status;
+                        return u.status === userStatusFilter;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-zinc-500 font-mono">
+                              Nenhum usuário encontrado para os filtros selecionados.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map((u, idx) => {
+                        const waLink = generateWhatsAppApprovalLink(u);
+                        const mailLink = generateEmailApprovalLink(u);
+
+                        return (
+                          <tr key={u.email || idx} className="hover:bg-zinc-900/40 transition">
+                            <td className="p-4">
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={u.photoUrl || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(u.email || 'user')}`}
+                                  alt={u.name || "Foto"}
+                                  className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 object-cover shrink-0"
+                                />
+                                <div>
+                                  <div className="font-bold text-white flex items-center gap-1.5">
+                                    <span>{u.name || "Usuário"}</span>
+                                    {u.email === "diretoria@portal.com" || u.email === "abautosmaooe@gmail.com" ? (
+                                      <span className="text-[9px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-mono font-bold">Admin Master</span>
+                                    ) : null}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 font-mono">
+                                    Cadastrado em: {u.createdAt ? new Date(u.createdAt).toLocaleDateString("pt-BR") : "Recente"}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-mono text-zinc-300 font-medium">{u.email}</div>
+                              {u.phone ? (
+                                <div className="text-[11px] text-emerald-400 font-mono mt-0.5">📞 {u.phone}</div>
+                              ) : (
+                                <div className="text-[10px] text-zinc-600 font-mono">Sem telefone cadastrado</div>
                               )}
-                            </div>
-                          </td>
-                          <td className="p-4 font-mono text-zinc-400">{u.email}</td>
-                          <td className="p-4">
-                            {u.status === "approved" ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
-                                <CheckCircle className="w-3 h-3 text-green-400" /> Aprovado / Premium
-                              </span>
-                            ) : u.status === "trial" ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
-                                <Activity className="w-3 h-3 text-amber-400" /> Teste Grátis (14d)
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
-                                <X className="w-3 h-3 text-red-400" /> Suspenso / Em Análise
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 text-zinc-500 font-mono text-[11px]">
-                            {u.createdAt ? new Date(u.createdAt).toLocaleDateString("pt-BR") : "Recente"}
-                          </td>
-                          <td className="p-4 text-right space-x-1.5">
-                            <button
-                              onClick={() => handleUpdateUserStatus(u.email, "approved")}
-                              title="Aprovar Acesso Premium"
-                              className="px-2.5 py-1 bg-green-500/15 hover:bg-green-500 text-green-400 hover:text-black rounded-lg font-mono font-bold text-[10px] uppercase transition cursor-pointer"
-                            >
-                              🟢 Aprovar
-                            </button>
-                            <button
-                              onClick={() => handleUpdateUserStatus(u.email, "trial")}
-                              title="Conceder Teste 14 Dias"
-                              className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black rounded-lg font-mono font-bold text-[10px] uppercase transition cursor-pointer"
-                            >
-                              🟡 Teste 14d
-                            </button>
-                            <button
-                              onClick={() => handleUpdateUserStatus(u.email, "suspended")}
-                              title="Suspender ou Congelar"
-                              className="px-2.5 py-1 bg-red-500/15 hover:bg-red-500 text-red-400 hover:text-black rounded-lg font-mono font-bold text-[10px] uppercase transition cursor-pointer"
-                            >
-                              🔴 Suspender
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                            </td>
+                            <td className="p-4">
+                              {u.status === "approved" ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                                  <CheckCircle className="w-3 h-3 text-green-400" /> Aprovado / Ativo
+                                </span>
+                              ) : u.status === "trial" ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                                  <Activity className="w-3 h-3 text-amber-400" /> Teste 14 Dias
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest animate-pulse">
+                                  <Clock className="w-3 h-3 text-red-400" /> Pendente / Em Análise
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              <select
+                                value={u.role || "membro"}
+                                onChange={(e) => handleUpdateUserStatus(u.email, u.status || "approved", { role: e.target.value as any })}
+                                className="bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:border-amber-400 cursor-pointer"
+                              >
+                                <option value="membro">Membro Comum</option>
+                                <option value="vip">Membro VIP</option>
+                                <option value="embaixador">Embaixador</option>
+                                <option value="anunciante">Anunciante</option>
+                                <option value="admin">Administrador</option>
+                              </select>
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                {u.status !== "approved" ? (
+                                  <button
+                                    onClick={() => handleUpdateUserStatus(u.email, "approved")}
+                                    title="Liberar Acesso Imediatamente"
+                                    className="px-2.5 py-1 bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-black rounded-lg font-mono font-bold text-[11px] uppercase transition cursor-pointer shadow-sm"
+                                  >
+                                    🟢 Aprovar
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleUpdateUserStatus(u.email, "suspended")}
+                                    title="Suspender Acesso"
+                                    className="px-2 py-1 bg-zinc-900 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 border border-zinc-800 rounded-lg font-mono font-bold text-[10px] uppercase transition cursor-pointer"
+                                  >
+                                    🔴 Suspender
+                                  </button>
+                                )}
+
+                                {u.status !== "trial" && (
+                                  <button
+                                    onClick={() => handleUpdateUserStatus(u.email, "trial")}
+                                    title="Conceder Teste Grátis de 14 Dias"
+                                    className="px-2 py-1 bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black rounded-lg font-mono font-bold text-[10px] uppercase transition cursor-pointer"
+                                  >
+                                    🟡 Teste 14d
+                                  </button>
+                                )}
+
+                                <a
+                                  href={waLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Enviar mensagem pronta de aprovação no WhatsApp"
+                                  className="p-1.5 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-black rounded-lg transition inline-flex items-center"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                </a>
+
+                                <a
+                                  href={mailLink}
+                                  title="Enviar e-mail de aprovação"
+                                  className="p-1.5 bg-blue-500/20 hover:bg-blue-500 text-blue-400 hover:text-white rounded-lg transition inline-flex items-center"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                </a>
+
+                                {u.email !== "diretoria@portal.com" && u.email !== "abautosmaooe@gmail.com" && (
+                                  <button
+                                    onClick={() => handleDeleteUserRecord(u.email)}
+                                    title="Remover Registro"
+                                    className="p-1.5 bg-zinc-900 hover:bg-red-900/40 text-zinc-500 hover:text-red-400 rounded-lg transition cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {/* Modal: Add Manual User */}
+            {showAddUserModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-white text-base">Cadastrar & Liberar Membro</h4>
+                    </div>
+                    <button
+                      onClick={() => setShowAddUserModal(false)}
+                      className="text-zinc-500 hover:text-white p-1"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleCreateManualUser} className="space-y-3.5">
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase text-zinc-400 mb-1">Nome Completo</label>
+                      <input
+                        type="text"
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        placeholder="Ex: João da Silva"
+                        className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase text-zinc-400 mb-1">E-mail de Acesso *</label>
+                      <input
+                        type="email"
+                        required
+                        value={newUserEmail}
+                        onChange={(e) => setNewUserEmail(e.target.value)}
+                        placeholder="Ex: joao@empresa.com.br"
+                        className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase text-zinc-400 mb-1">WhatsApp / Celular (Opcional)</label>
+                      <input
+                        type="text"
+                        value={newUserPhone}
+                        onChange={(e) => setNewUserPhone(e.target.value)}
+                        placeholder="Ex: 32999998888"
+                        className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase text-zinc-400 mb-1">Perfil</label>
+                        <select
+                          value={newUserRole}
+                          onChange={(e) => setNewUserRole(e.target.value as any)}
+                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                        >
+                          <option value="vip">Membro VIP</option>
+                          <option value="embaixador">Embaixador</option>
+                          <option value="anunciante">Anunciante</option>
+                          <option value="membro">Membro Comum</option>
+                          <option value="admin">Administrador</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase text-zinc-400 mb-1">Status Inicial</label>
+                        <select
+                          value={newUserStatus}
+                          onChange={(e) => setNewUserStatus(e.target.value as any)}
+                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                        >
+                          <option value="approved">🟢 Aprovado (Livre)</option>
+                          <option value="trial">🟡 Teste 14 Dias</option>
+                          <option value="suspended">🔴 Em Análise</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddUserModal(false)}
+                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-bold"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-zinc-950 rounded-xl text-xs font-bold"
+                      >
+                        Salvar e Liberar
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1573,7 +1943,7 @@ export default function CmsDashboard({
 
             {/* Micro-navigation for pages tabs */}
             <div className="flex flex-wrap gap-1.5 p-2 bg-zinc-950/80 border border-zinc-900 rounded-xl max-h-[160px] overflow-y-auto">
-              {(["quemsomos", "objetivos", "ondeestamos", "contato", "comunidade", "eventos", "galeria", "embaixadores", "vagas", "cursos", "parceiros", "podcast", "anuncie"] as const).map((sub) => {
+              {(["quemsomos", "objetivos", "ondeestamos", "contato", "comunidade", "eventos", "galeria", "embaixadores", "vagas", "parceiros", "podcast", "anuncie"] as const).map((sub) => {
                 const isActive = selectedSubPage === sub;
                 const label = sub === "quemsomos" ? "Quem Somos" :
                               sub === "objetivos" ? "Objetivos" :
@@ -1584,7 +1954,6 @@ export default function CmsDashboard({
                               sub === "galeria" ? "Galeria" :
                               sub === "embaixadores" ? "Embaixadores" :
                               sub === "vagas" ? "Vagas Emprego" :
-                              sub === "cursos" ? "Cursos On-line" :
                               sub === "parceiros" ? "Parceiros" :
                               sub === "podcast" ? "Podcast" : "Anuncie Aqui";
                 return (
@@ -1699,16 +2068,6 @@ export default function CmsDashboard({
                       onChange={(e) => setObjComunidade(e.target.value)}
                       rows={3}
                       className="w-full p-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-emerald-500 font-sans leading-relaxed"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-blue-400 font-mono uppercase block">Foco 4 - Cursos Online & Treinamentos:</label>
-                    <textarea
-                      value={objCursos}
-                      onChange={(e) => setObjCursos(e.target.value)}
-                      rows={3}
-                      className="w-full p-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-blue-500 font-sans leading-relaxed"
                     />
                   </div>
                 </div>
@@ -1966,110 +2325,6 @@ export default function CmsDashboard({
                       rows={3}
                       className="w-full p-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-pink-500 leading-relaxed font-sans"
                     />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* SUB-TAB 10: CURSOS */}
-            {selectedSubPage === "cursos" && (
-              <div className="p-4 rounded-xl bg-black border border-zinc-850 space-y-4 text-left">
-                <span className="text-xs text-white font-bold block mb-1">Página de Cursos Online</span>
-                <div className="space-y-3.5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-zinc-400 font-mono uppercase block">Título da Seção de Cursos:</label>
-                    <input
-                      type="text"
-                      value={cursosTitle}
-                      onChange={(e) => setCursosTitle(e.target.value)}
-                      className="w-full p-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-xs text-white focus:outline-none focus:border-pink-500 font-bold"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-zinc-400 font-mono uppercase block">Descrição de Cursos:</label>
-                    <textarea
-                      value={cursosDescription}
-                      onChange={(e) => setCursosDescription(e.target.value)}
-                      rows={3}
-                      className="w-full p-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-pink-500 leading-relaxed font-sans"
-                    />
-                  </div>
-
-                  <div className="p-3.5 rounded-lg bg-zinc-900 border border-zinc-800 space-y-3 mt-4">
-                    <span className="text-[10px] font-mono text-pink-400 font-black block uppercase flex items-center gap-1.5">
-                      <PlusCircle className="w-3.5 h-3.5" /> Adicionar Novo Curso à Listagem:
-                    </span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Nome do Curso"
-                        value={newCursoName}
-                        onChange={(e) => setNewCursoName(e.target.value)}
-                        className="p-2.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-white focus:outline-none focus:border-pink-500 font-mono font-bold"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Link Externo (Checkout/Hotmart)"
-                        value={newCursoUrl}
-                        onChange={(e) => setNewCursoUrl(e.target.value)}
-                        className="p-2.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-white focus:outline-none focus:border-pink-500 font-mono"
-                      />
-                    </div>
-                    <textarea
-                      placeholder="Descrição curta do curso e benefícios..."
-                      value={newCursoDesc}
-                      onChange={(e) => setNewCursoDesc(e.target.value)}
-                      rows={2}
-                      className="w-full p-2.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-white focus:outline-none focus:border-pink-500 font-sans"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!newCursoName || !newCursoDesc) return;
-                        setLocalCursos([...localCursos, { name: newCursoName, description: newCursoDesc, url: newCursoUrl }]);
-                        setNewCursoName("");
-                        setNewCursoDesc("");
-                        setNewCursoUrl("");
-                        playSuccessSound();
-                      }}
-                      className="w-full py-2 bg-pink-600 hover:bg-pink-500 text-white font-mono font-bold text-[10px] rounded-lg transition uppercase tracking-widest shadow-lg shadow-pink-500/10"
-                    >
-                      Registrar Curso no Portal →
-                    </button>
-                  </div>
-
-                  <div className="space-y-2 mt-4">
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase font-bold px-1">Cursos Cadastrados:</span>
-                    <div className="grid grid-cols-1 gap-2">
-                      {localCursos.map((curso, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-850 rounded-xl group hover:border-pink-500/30 transition-all">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center text-pink-500 shadow-inner">
-                              <Activity className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <h5 className="text-[11px] font-bold text-white group-hover:text-pink-400 transition-colors">{curso.name}</h5>
-                              <p className="text-[10px] text-zinc-500 line-clamp-1">{curso.description}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => {
-                              playClickSound(180, "sawtooth");
-                              setLocalCursos(localCursos.filter((_, i) => i !== idx));
-                            }}
-                            className="p-1.5 text-zinc-600 hover:text-red-400 transition-colors"
-                            title="Remover Curso"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                      {localCursos.length === 0 && (
-                        <div className="p-4 text-center border border-dashed border-zinc-800 rounded-xl">
-                          <span className="text-[10px] font-mono text-zinc-500 italic">Nenhum curso cadastrado ainda.</span>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>

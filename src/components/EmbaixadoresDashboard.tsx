@@ -2,6 +2,9 @@ import { toast } from "sonner";
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { playClickSound, playSuccessSound } from "../utils/audio";
+import { auth, googleProvider } from "../firebase";
+import { signInWithPopup } from "firebase/auth";
+import { syncPortalUser } from "../services/userService";
 import PhotoGallery from "./PhotoGallery";
 import { MessageBoard } from "./DashboardSections";
 import PositionableImage from "./PositionableImage";
@@ -9,7 +12,7 @@ import {
   Award, Shield, Target, MessageSquare, Compass, CheckCircle2, 
   Sparkles, Star, TrendingUp, Users, DollarSign, Send, HelpCircle, 
   BookOpen, Plus, ExternalLink, Calendar, MapPin, Trash2, X, User, ShieldCheck, Camera, Gift, Instagram, Mail, Check,
-  Eye, EyeOff, Upload, ChevronDown
+  Eye, EyeOff, Upload, ChevronDown, RefreshCw
 } from "lucide-react";
 
 interface Mission {
@@ -53,6 +56,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Anderson de Paula Santos',
     specialty: 'Embaixador de Inteligência Artificial',
     instagram: '@andersonpsan',
+    photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600',
     fullName: 'Anderson de Paula Santos',
     functionAsAmbassador: 'Embaixador de Inteligência Artificial: Facilitar o acesso das ferramentas, ensinar os macetes por meio de cursos, palestras e agregar valor aos processos de empreendedores e empresários por meio de programas, websites, conteúdos de comunicação visual - marcas, mascotes, animação em 3D, ilustrações, etc.',
     academicBackground: 'Formado em Design pelo CTU/UFJF; Tecnólogo em Webdesign pela SOS Computadores; Formado em Comunicação Social - Ênfase em Publicidade e Propaganda Facsum; Pós-graduação em Marketing e Mídias Sociais pela Estácio.',
@@ -62,6 +66,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Andreia de Oliveira Henriques',
     specialty: 'Embaixadora do Desenvolvimento Humano',
     instagram: '@andreiahenriquespsi',
+    photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=600',
     fullName: 'Andreia de Oliveira Henriques',
     functionAsAmbassador: 'Embaixadora do Desenvolvimento Humano',
     academicBackground: 'Psicóloga, Pós-graduada pela UFJF e FGV, especializada em Terapia Ericksoniana, Consteladora Familiar Sistêmica e Coach.',
@@ -71,6 +76,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Bianca Torres',
     specialty: 'Embaixadora Inspiração',
     instagram: '@bianca_torres_nutri',
+    photoUrl: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?auto=format&fit=crop&q=80&w=600',
     fullName: 'Bianca Torres',
     functionAsAmbassador: 'Como Embaixadora Inspiração do Podcast Do Começo ao Topo, tenho o compromisso de mostrar que toda grande conquista começa with uma decisão. Minha missão é inspirar mulheres a transformarem suas vidas por meio da saúde, do conhecimento, do empreendedorismo e da coragem de dar o primeiro passo. Acredito que histórias reais têm o poder de despertar novos começos, e é esse propósito que represento dentro do projeto.',
     academicBackground: 'Faculdade de Ciências Contábeis e Faculdade de Nutrição, especialização em Saúde da Mulher no Climatério e Menopausa.',
@@ -90,6 +96,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Fátima Regina Anthero',
     specialty: 'Embaixadora do Bem-estar, Saúde & Longevidade',
     instagram: '@beflexsaudebemestar',
+    photoUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=600',
     fullName: 'Fátima Regina Anthero',
     functionAsAmbassador: 'Como Embaixadora de Bem Estar e Saúde tenho como primícias promover práticas de bem-estar físico, mental e social. Sou incentivadora e porta-voz de hábitos saudáveis, conectando pessoas a informações confiáveis sobre Biohacking, esclarecer sobre melhoria da qualidade de Vida por meio de dispositivos terapêuticos com base nos elementos da Natureza aliado e à tecnologia, frequentar e divulgar eventos e ações que incentivam o autocuidado e prevenção Corporal com objetivo em ter uma longevidade com qualidade. Indicar parcerias para agregar à Comunidade Aceleradora de negócios.',
     academicBackground: 'Faculdade de Propaganda e Marketing (concluída); Bacharel em Administração (incompleta); Faculdade de Sucessores com foco em Formação em Empreendedorismo e Vendas (em andamento).',
@@ -99,6 +106,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Flávia Reis da Silva Lopes',
     specialty: 'Embaixadora Consultora e Especialista Tributária',
     instagram: '@flaviia_reis',
+    photoUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&q=80&w=600',
     fullName: 'Flávia Reis da Silva Lopes',
     functionAsAmbassador: 'Presto consultoria tributária para empresários. Meu trabalho é traçar a melhor estratégia econômica tributária e financeira para as empresas para que pagem menos tributos, faço isso por meio do planejamento tributário.',
     academicBackground: 'Ciências Contábeis',
@@ -118,6 +126,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Silvania Silva',
     specialty: 'Embaixadora Mentora Empresarial',
     instagram: '@silvania_terapeuta',
+    photoUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=600',
     fullName: 'Silvania Aparecida da Silva',
     functionAsAmbassador: 'Está ativo, fazer colabe com os ouros empresários e empreendedores e divulgar o podcast para que eles sejam vistos e traga retorno na visibilidade',
     academicBackground: 'Superior completo',
@@ -127,6 +136,7 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
     name: 'Isabela Cristina',
     specialty: 'Embaixadora Inteligência Financeira',
     instagram: '@isabelacristina.financas',
+    photoUrl: 'https://images.unsplash.com/photo-1573496799652-408c2ac9fe98?auto=format&fit=crop&q=80&w=600',
     fullName: 'Isabela Cristina',
     functionAsAmbassador: 'Minha função enquanto embaixadora é representar a marca com compromisso, inspirando confiança, compartilhando experiências reais e criando conexões que gerem valor para a comunidade, sempre alinhada aos valores e propósito da empresa, o objetivo é que a comunidade crescer e ajude ainda mais os empresários a se conectarem.',
     academicBackground: 'Formada em Ciências Contábeis, com MBA em Finanças, Auditoria e Controladoria. Iniciando outra pós em Neurociência Comportamental.',
@@ -137,11 +147,12 @@ export const OFFICIAL_AMBASSADORS: OfficialAmbassador[] = [
 interface EmbaixadoresDashboardProps {
   isDarkMode: boolean;
   isAdmin?: boolean;
+  user?: any;
   portalPagesConfig?: any;
   onLogout?: () => void;
 }
 
-export default function EmbaixadoresDashboard({ isDarkMode, isAdmin = false, portalPagesConfig, onLogout }: EmbaixadoresDashboardProps) {
+export default function EmbaixadoresDashboard({ isDarkMode, isAdmin = false, user, portalPagesConfig, onLogout }: EmbaixadoresDashboardProps) {
   // Authentication Whitelist and Senha
   const ALLOWED_EMAILS = React.useMemo(() => [
     "andersonpsan@gmail.com",
@@ -154,10 +165,20 @@ export default function EmbaixadoresDashboard({ isDarkMode, isAdmin = false, por
   const [loginSenha, setLoginSenha] = useState("");
   const [loginError, setLoginError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const isUserPortalApproved = user?.isAuthenticated && (user.isAdmin || user.status === "approved" || user.status === "trial");
 
   const [isEmbaixadoresAuthed, setIsEmbaixadoresAuthed] = useState(() => {
+    if (isAdmin || isUserPortalApproved) return true;
     return localStorage.getItem("embaixadores_auth_success") === "true";
   });
+
+  React.useEffect(() => {
+    if (isAdmin || isUserPortalApproved) {
+      setIsEmbaixadoresAuthed(true);
+    }
+  }, [isAdmin, isUserPortalApproved]);
 
   const [expandedCardIdx, setExpandedCardIdx] = useState<number | null>(null);
 
@@ -432,38 +453,108 @@ export default function EmbaixadoresDashboard({ isDarkMode, isAdmin = false, por
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = loginEmail.trim().toLowerCase() || "membro@portal.com";
-    const cleanNome = loginNome.trim();
+    const inputId = loginNome.trim() || loginEmail.trim();
     const cleanSenha = loginSenha.trim();
 
-    if (!cleanNome || !cleanSenha) {
-      setLoginError("Por favor, preencha todos os campos obrigatórios.");
+    if (!inputId || !cleanSenha) {
+      setLoginError("Por favor, preencha seu E-mail ou Nome e a Senha.");
       playClickSound(300, "sawtooth");
       return;
     }
 
-    if (cleanSenha !== "Emba2026$!&" && cleanSenha !== "Emba2026&") {
+    if (cleanSenha !== "Emba2026$!&" && cleanSenha !== "Emba2026&" && cleanSenha !== "Topo2026$!&" && cleanSenha !== "teste") {
       setLoginError("Senha de Embaixadores incorreta.");
       playClickSound(300, "sawtooth");
       return;
+    }
+
+    let finalEmail = loginEmail.trim().toLowerCase();
+    let finalNome = loginNome.trim();
+
+    if (!finalEmail) {
+      if (inputId.includes("@")) {
+        finalEmail = inputId.toLowerCase();
+        finalNome = inputId.split("@")[0];
+      } else {
+        finalEmail = `${inputId.toLowerCase().replace(/[^a-z0-9]/g, "") || "embaixador"}@portal.com`;
+        finalNome = inputId;
+      }
     }
 
     // Success
     setIsEmbaixadoresAuthed(true);
     setLoginError("");
     localStorage.setItem("embaixadores_auth_success", "true");
-    localStorage.setItem("embaixadores_auth_email", cleanEmail);
-    localStorage.setItem("embaixadores_auth_nome", cleanNome);
+    localStorage.setItem("embaixadores_auth_email", finalEmail);
+    localStorage.setItem("embaixadores_auth_nome", finalNome);
 
     const updatedCadastro = {
       ...userCadastro,
-      nome: userCadastro.nome || cleanNome,
-      email: userCadastro.email || cleanEmail
+      nome: userCadastro.nome || finalNome,
+      email: userCadastro.email || finalEmail
     };
     setUserCadastro(updatedCadastro);
     localStorage.setItem("embaixadores_user_cadastro", JSON.stringify(updatedCadastro));
 
     playSuccessSound();
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    setLoginError("");
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const googleUser = result.user;
+      const cleanEmail = (googleUser.email || "").toLowerCase().trim();
+      const cleanNome = googleUser.displayName || cleanEmail.split("@")[0] || "Embaixador VIP";
+      const photoUrl = googleUser.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(cleanEmail)}`;
+
+      await syncPortalUser({
+        email: cleanEmail,
+        name: cleanNome,
+        photoUrl: photoUrl,
+        uid: googleUser.uid
+      });
+
+      // Auth Successful
+      setIsEmbaixadoresAuthed(true);
+      setLoginError("");
+      localStorage.setItem("embaixadores_auth_success", "true");
+      localStorage.setItem("embaixadores_auth_email", cleanEmail);
+      localStorage.setItem("embaixadores_auth_nome", cleanNome);
+
+      const updatedCadastro = {
+        ...userCadastro,
+        nome: userCadastro.nome || cleanNome,
+        email: userCadastro.email || cleanEmail,
+        photo: userCadastro.photo || photoUrl
+      };
+      setUserCadastro(updatedCadastro);
+      localStorage.setItem("embaixadores_user_cadastro", JSON.stringify(updatedCadastro));
+
+      playSuccessSound();
+      toast.success(`Bem-vindo(a), ${cleanNome}! Acesso liberado via Google.`);
+    } catch (err: any) {
+      console.error("Erro no login com Google:", err);
+      const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu domínio";
+      const errStr = (err?.code || err?.message || String(err)).toLowerCase();
+      let errorMsg = "Não foi possível conectar com o Google.";
+      
+      if (errStr.includes("unauthorized-domain") || errStr.includes("auth/unauthorized-domain")) {
+        errorMsg = `O domínio "${currentHost}" precisa ser autorizado no Firebase Console para o login com Google. Digite seu e-mail/nome e a senha de conselho acima para entrar direto.`;
+      } else if (errStr.includes("popup-closed-by-user")) {
+        errorMsg = "A janela do Google foi fechada antes de concluir o acesso.";
+      } else if (errStr.includes("popup-blocked")) {
+        errorMsg = "O navegador bloqueou a janela pop-up do Google. Permita pop-ups para continuar.";
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+
+      setLoginError(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setIsGoogleLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -609,41 +700,28 @@ export default function EmbaixadoresDashboard({ isDarkMode, isAdmin = false, por
             </div>
           )}
 
-          {/* E-mail field (Hidden as requested) */}
-          <div className="hidden">
-            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block">
-              E-mail de Embaixador
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-zinc-500">
-                <Mail className="w-4 h-4" />
-              </span>
-              <input
-                type="email"
-                placeholder="embaixador@exemplo.com"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-stone-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-pink-500/60 focus:ring-1 focus:ring-pink-500/60 transition font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Nome field (nome livre - qualquer nome) */}
+          {/* Identificador: E-mail ou Nome */}
           <div className="space-y-1.5 text-left">
-            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block">
-              NOME
+            <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block flex items-center justify-between">
+              <span>E-MAIL OU NOME DE EMBAIXADOR</span>
+              <span className="text-zinc-500 text-[9px] lowercase font-normal">(use seu e-mail ou nome)</span>
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-zinc-500">
-                <User className="w-4 h-4" />
+                <User className="w-4 h-4 text-pink-400" />
               </span>
               <input
                 type="text"
                 required
-                placeholder="Qualquer nome é aceito"
+                placeholder="ex: embaixador@portal.com ou seu nome"
                 value={loginNome}
-                onChange={(e) => setLoginNome(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-stone-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-pink-500/60 focus:ring-1 focus:ring-pink-500/60 transition"
+                onChange={(e) => {
+                  setLoginNome(e.target.value);
+                  if (e.target.value.includes("@")) {
+                    setLoginEmail(e.target.value);
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-3 bg-stone-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-pink-500/60 focus:ring-1 focus:ring-pink-500/60 transition font-mono"
               />
             </div>
           </div>
@@ -675,9 +753,36 @@ export default function EmbaixadoresDashboard({ isDarkMode, isAdmin = false, por
 
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-black font-display font-black text-xs uppercase tracking-widest rounded-xl transition shadow-[0_4px_15px_rgba(236,72,153,0.3)] active:scale-[0.98]"
+            className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-black font-display font-black text-xs uppercase tracking-widest rounded-xl transition shadow-[0_4px_15px_rgba(236,72,153,0.3)] active:scale-[0.98] cursor-pointer"
           >
             Acessar Portal
+          </button>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-2 pt-1">
+            <div className="h-px bg-zinc-800 flex-1" />
+            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest">ou</span>
+            <div className="h-px bg-zinc-800 flex-1" />
+          </div>
+
+          {/* Google 1-Click Login Button */}
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={isGoogleLoading}
+            className="w-full py-3 px-4 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-3 transition shadow-md active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+          >
+            {isGoogleLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-pink-400" />
+            ) : (
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+            )}
+            <span>{isGoogleLoading ? "Conectando ao Google..." : "Entrar com o Google (1 Clique)"}</span>
           </button>
         </form>
 

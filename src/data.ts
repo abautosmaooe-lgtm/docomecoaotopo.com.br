@@ -11,6 +11,22 @@ export interface SpecialCalendarDate {
 
 export const SPECIAL_DATES_CATALOG: SpecialCalendarDate[] = [
   {
+    dateStr: "2026-09-12",
+    title: "Palestra Reforma Tributária com Flávia Reis",
+    category: "WORKSHOP",
+    description: "Entenda o presente, antecipe o futuro. Panorama completo das transformações fiscais e impactos nas empresas com a especialista Flávia Reis (9h às 12h, Online). Informações: (32) 99110-9437.",
+    icon: "⚖️",
+    location: "Online (Transmissão Ao Vivo)"
+  },
+  {
+    dateStr: "2026-08-30",
+    title: "Unicorn Summit South America 2026",
+    category: "EVENTO",
+    description: "Encontro internacional de inovação, tecnologia e empreendedorismo que reúne líderes globais, startups e investidores em Juiz de Fora.",
+    icon: "🦄",
+    location: "Juiz de Fora - MG"
+  },
+  {
     dateStr: "2026-08-09",
     title: "Especial Dia dos Pais: Empreendedorismo Familiar",
     category: "COMEMORATIVA",
@@ -69,6 +85,89 @@ export const SPECIAL_DATES_CATALOG: SpecialCalendarDate[] = [
 ];
 
 export const INITIAL_ARTICLES: NewsArticle[] = [
+  {
+    id: "art-palestra-reforma-tributaria-flavia-reis",
+    title: "PALESTRA REFORMA TRIBUTÁRIA COM FLÁVIA REIS: ENTENDA O PRESENTE, ANTECIPE O FUTURO",
+    excerpt: "Evento online no sábado 12/09 das 9h às 12h aborda o panorama das transformações fiscais, prazos e impactos nos regimes tributários com a especialista Flávia Reis. Vagas limitadas por R$ 30,00.",
+    content: `Palestra Online Especial: Reforma Tributária - Entenda o Presente, Antecipe o Futuro
+
+Um panorama completo sobre as transformações que já começaram e os impactos que vão redefinir empresas e negócios no Brasil.
+
+Data: Sábado, 12 de Setembro de 2026
+Horário: 9h às 12h (Carga Horária: 3 Horas)
+Formato: Palestra Online (Participe de onde estiver)
+Investimento: R$ 30,00 (Vagas Limitadas)
+
+Palestrante: Flávia Reis - Especialista Tributária
+Referência com vasta experiência de mercado, oferecendo conteúdo atualizado, direto ao ponto e com visão estratégica para o futuro dos negócios.
+
+Temas Abordados:
+✓ Panorama da Reforma Tributária
+✓ Principais mudanças e prazos
+✓ Impactos no Simples Nacional, Lucro Presumido e Lucro Real
+✓ Planejamento e oportunidades para micro, pequenas e médias empresas
+
+Informações e Inscrições Diretas via WhatsApp:
+Fale com a Flávia: +55 (32) 99110-9437`,
+    category: "EVENTOS",
+    author: "Flávia Reis - Especialista Tributária",
+    date: "2026-09-12T09:00:00Z",
+    readTime: "3 min",
+    imageUrl: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80",
+    views: 3120,
+    shares: 450,
+    likes: 890,
+    isPremium: false,
+    location: "Online / Juiz de Fora",
+    linkUrl: "https://wa.me/553291109437?text=Ol%C3%A1%20Fl%C3%A1via!%20Gostaria%20de%20garantir%20minha%20inscri%C3%A7%C3%A3o%20na%20Palestra%20Reforma%20Tribut%C3%A1ria.",
+    tags: ["Reforma Tributária", "Flávia Reis", "Finanças", "Tributário", "Empreendedorismo", "Juiz de Fora", "Workshop", "WhatsApp"],
+    commentsCount: 42
+  },
+  {
+    id: "art-unicorn-summit-2026",
+    title: "JUIZ DE FORA RECEBE O UNICORN SUMMIT SOUTH AMERICA 2026, ENCONTRO INTERNACIONAL DE INOVAÇÃO, TECNOLOGIA E EMPREENDEDORISMO",
+    excerpt: "Evento acontece de 30 de agosto a 2 de setembro e reúne empreendedores, investidores, pesquisadores e lideranças globais em uma programação voltada ao futuro dos negócios e da tecnologia.",
+    content: `Juiz de Fora será palco, entre os dias 30 de agosto e 2 de setembro de 2026, do Unicorn Summit South America, evento internacional que chega à cidade com a proposta de conectar empreendedores, startups, investidores, pesquisadores e grandes nomes da inovação e da tecnologia.
+
+Com o conceito “Unicorn Summit is where the next unicorns are born” — “Onde nascem os próximos unicórnios” —, o encontro integra uma plataforma global de eventos realizada em diferentes regiões do mundo e terá, em sua edição sul-americana, Juiz de Fora como cidade-sede.
+
+A programação foi estruturada para promover conhecimento, conexões estratégicas e oportunidades de negócios, reunindo palestras, painéis, networking e discussões sobre temas ligados à inovação, inteligência artificial, tecnologia, startups, investimentos, longevidade e desenvolvimento sustentável.
+
+Entre os nomes de destaque relacionados ao evento estão Naveen Jain, fundador e CEO da Viome, além de especialistas, investidores, pesquisadores e empreendedores de diferentes países. O evento também conta com a participação de representantes do ecossistema de inovação de Juiz de Fora, incluindo nomes ligados à Universidade Federal de Juiz de Fora (UFJF).
+
+De acordo com a organização, o Unicorn Summit South America busca destacar o potencial de inovação da América do Sul e aproximar talentos, empresas e capital de oportunidades capazes de gerar impacto em escala global. A edição brasileira também pretende fortalecer Juiz de Fora como um importante polo de empreendedorismo, tecnologia, pesquisa e inovação.
+
+### Uma ponte entre o empreendedor local e o mercado global
+
+Mais do que um evento de palestras, o Unicorn Summit propõe a criação de uma rede de conexões entre diferentes setores. A programação contempla desde fundadores de startups e investidores até pesquisadores, empresas, instituições acadêmicas e lideranças públicas.
+
+A proposta é criar um ambiente no qual ideias possam encontrar parceiros, investimentos e caminhos para ganhar escala, aproximando o ecossistema regional das discussões que movimentam o cenário internacional de inovação.
+
+O evento também contará com momentos de networking e experiências voltadas à conexão entre participantes, reforçando a proposta de transformar conhecimento em oportunidades concretas de negócios e colaboração.
+
+### Juiz de Fora no mapa da inovação
+
+A escolha de Juiz de Fora para sediar a edição sul-americana representa uma oportunidade de ampliar a visibilidade da cidade no cenário nacional e internacional.
+
+Durante quatro dias, a cidade deverá receber participantes interessados em tecnologia, empreendedorismo, investimentos e novas soluções para os desafios do futuro, criando oportunidades de relacionamento entre o ecossistema local e profissionais de diferentes partes do mundo.
+
+O Unicorn Summit South America 2026 acontece nos dias 30 e 31 de agosto e 1º e 2 de setembro, em Juiz de Fora, Minas Gerais.
+
+Mais informações e inscrições: https://sa.unicornsummit.net/?utm_source=chatgpt.com`,
+    category: "EVENTOS",
+    author: "Redação Do Começo ao Topo",
+    date: "2026-08-30T09:00:00Z",
+    readTime: "4 min",
+    imageUrl: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80",
+    views: 2450,
+    shares: 210,
+    likes: 680,
+    isPremium: false,
+    location: "Juiz de Fora - MG",
+    linkUrl: "https://sa.unicornsummit.net/?utm_source=chatgpt.com",
+    tags: ["Unicorn Summit", "Inovação", "Tecnologia", "Empreendedorismo", "Juiz de Fora", "Startups", "UFJF", "Investimentos"],
+    commentsCount: 38
+  },
   {
     id: "art-evento-17-agosto",
     title: "17/08: GRANDE ENCONTRO REGIONAL DE NEGÓCIOS & RODADA DE CONEXÕES",

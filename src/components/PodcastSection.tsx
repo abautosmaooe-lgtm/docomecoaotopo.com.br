@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { 
   Youtube, Play, Headphones, ExternalLink, Sparkles, 
-  Radio, Star, Award, Edit3, Save, X, Eye, Calendar, Clock, Film, Plus, Trash2, GripVertical
+  Radio, Star, Award, Edit3, Save, X, Eye, Calendar, Clock, 
+  Film, Plus, Trash2, GripVertical, PictureInPicture2
 } from "lucide-react";
 import { playClickSound, playSuccessSound } from "../utils/audio";
 import {
@@ -21,8 +22,9 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { PipVideoData } from "./PodcastPipPlayer";
 
-interface Episode {
+export interface Episode {
   id: string;
   number: number;
   title: string;
@@ -52,7 +54,7 @@ const INITIAL_EPISODES: Episode[] = [
     number: 42,
     title: "Posicionamento de Marca & Vendas Estratégicas",
     description: "Descubra como estruturar sua imagem profissional e usar canais digitais para atrair clientes de alto valor, expandindo a autoridade do seu negócio local para todo o Brasil.",
-    youtubeUrl: "https://www.youtube.com/watch?v=MOV0hq440ZI",
+    youtubeUrl: "https://www.youtube.com/watch?v=21X5lGlDOfg",
     thumbnail: "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?auto=format&fit=crop&w=800&q=80",
     duration: "48m 15s",
     views: "980 views",
@@ -63,7 +65,7 @@ const INITIAL_EPISODES: Episode[] = [
     number: 41,
     title: "Liderança de Impacto e Networking Corporativo",
     description: "Sintonize nas rotinas e métodos de gestão dos embaixadores mais influentes do ecossistema Do Começo ao Topo para maximizar sua performance comercial.",
-    youtubeUrl: "https://www.youtube.com/watch?v=MOV0hq440ZI",
+    youtubeUrl: "https://www.youtube.com/watch?v=1La4QzGeaaQ",
     thumbnail: "https://images.unsplash.com/photo-1516280440614-37939bbacd6a?auto=format&fit=crop&w=800&q=80",
     duration: "55m 40s",
     views: "812 views",
@@ -95,9 +97,10 @@ interface SortableEpisodeCardProps {
   isDarkMode: boolean;
   onPlay: (id: string) => void;
   onEdit: (ep: Episode, e?: React.MouseEvent) => void;
+  onOpenPip?: (ep: Episode, e?: React.MouseEvent) => void;
 }
 
-function SortableEpisodeCard({ ep, isCurrentlyInEditMode, playingCardId, featuredId, isDarkMode, onPlay, onEdit }: SortableEpisodeCardProps) {
+function SortableEpisodeCard({ ep, isCurrentlyInEditMode, playingCardId, featuredId, isDarkMode, onPlay, onEdit, onOpenPip }: SortableEpisodeCardProps) {
   const {
     attributes,
     listeners,
@@ -146,6 +149,25 @@ function SortableEpisodeCard({ ep, isCurrentlyInEditMode, playingCardId, feature
           >
             <Edit3 className="w-3 h-3" />
             <span>EDIT</span>
+          </button>
+        </div>
+      )}
+
+      {/* Picture-in-Picture Floating Trigger */}
+      {onOpenPip && (
+        <div className="absolute top-2 left-2 z-[30]">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenPip(ep, e);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="px-2 py-1 bg-black/80 hover:bg-pink-600 border border-zinc-700/80 hover:border-pink-400 text-zinc-300 hover:text-white rounded-lg text-[8px] font-mono font-bold flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 transition cursor-pointer"
+            title="Abrir em Picture-in-Picture flutuante (mover pela tela)"
+          >
+            <PictureInPicture2 className="w-2.5 h-2.5" />
+            <span>PiP</span>
           </button>
         </div>
       )}
@@ -208,9 +230,25 @@ function SortableEpisodeCard({ ep, isCurrentlyInEditMode, playingCardId, feature
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-mono border-t border-zinc-900/60 pt-2 cursor-pointer" onClick={() => onPlay(ep.id)}>
-        <span>{ep.views}</span>
-        <span>{ep.date}</span>
+      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-mono border-t border-zinc-900/60 pt-2">
+        <span className="cursor-pointer" onClick={() => onPlay(ep.id)}>{ep.views}</span>
+        <div className="flex items-center gap-2">
+          {onOpenPip && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenPip(ep, e);
+              }}
+              className="text-zinc-400 hover:text-pink-400 font-mono text-[9px] flex items-center gap-0.5 transition"
+              title="Abrir no modo Picture-in-Picture flutuante"
+            >
+              <PictureInPicture2 className="w-3 h-3" />
+              <span>PiP</span>
+            </button>
+          )}
+          <span className="cursor-pointer" onClick={() => onPlay(ep.id)}>{ep.date}</span>
+        </div>
       </div>
     </div>
   );
@@ -224,9 +262,10 @@ interface PodcastSectionProps {
     name?: string;
   };
   directEditingMode?: boolean;
+  onOpenPip?: (video: PipVideoData) => void;
 }
 
-export default function PodcastSection({ isDarkMode, user, directEditingMode }: PodcastSectionProps) {
+export default function PodcastSection({ isDarkMode, user, directEditingMode, onOpenPip }: PodcastSectionProps) {
   // Read episode list state from localStorage
   const [episodes, setEpisodes] = useState<Episode[]>(() => {
     const saved = localStorage.getItem("docomeco_podcasts_v2");
@@ -234,12 +273,18 @@ export default function PodcastSection({ isDarkMode, user, directEditingMode }: 
       try {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-          // If the first saved episode has the old YouTube link, update it dynamically
-          if (parsed[0].id === "ep-43" && (parsed[0].youtubeUrl.includes("S-H-9S4hY-w") || parsed[0].youtubeUrl === "")) {
+          // Ensure each episode has unique distinct youtubeUrl if they were erroneously duplicated
+          if (parsed[0] && (parsed[0].youtubeUrl.includes("S-H-9S4hY-w") || !parsed[0].youtubeUrl)) {
             parsed[0].youtubeUrl = "https://www.youtube.com/watch?v=MOV0hq440ZI";
           }
+          if (parsed[1] && (parsed[1].youtubeUrl === parsed[0]?.youtubeUrl || !parsed[1].youtubeUrl)) {
+            parsed[1].youtubeUrl = "https://www.youtube.com/watch?v=21X5lGlDOfg";
+          }
+          if (parsed[2] && (parsed[2].youtubeUrl === parsed[0]?.youtubeUrl || parsed[2].youtubeUrl === parsed[1]?.youtubeUrl || !parsed[2].youtubeUrl)) {
+            parsed[2].youtubeUrl = "https://www.youtube.com/watch?v=1La4QzGeaaQ";
+          }
+          return parsed;
         }
-        return parsed;
       } catch (e) {
         console.error("Erro ao ler podcasts:", e);
       }
@@ -651,6 +696,30 @@ export default function PodcastSection({ isDarkMode, user, directEditingMode }: 
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Picture-in-Picture Trigger Button */}
+              {onOpenPip && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    playClickSound(800, "sine");
+                    onOpenPip({
+                      id: featuredEpisode.id,
+                      number: featuredEpisode.number,
+                      title: featuredEpisode.title,
+                      youtubeUrl: featuredEpisode.youtubeUrl,
+                      embedCode: featuredEpisode.embedCode,
+                      duration: featuredEpisode.duration,
+                    });
+                  }}
+                  className="text-xs font-mono text-white hover:text-pink-300 transition flex items-center gap-1.5 border border-pink-500/40 bg-pink-500/20 hover:bg-pink-500/30 px-3 py-1.5 rounded-lg shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
+                  title="Abrir em Picture-in-Picture flutuante (você pode navegar pelo portal e mover o vídeo)"
+                >
+                  <PictureInPicture2 className="w-3.5 h-3.5 text-pink-400" />
+                  <span className="font-bold">Modo PiP</span>
+                </button>
+              )}
+
               {playingVideoId && featuredEpisode.id === featuredId && (
                 <button
                   onClick={() => setPlayingVideoId(null)}
@@ -715,6 +784,17 @@ export default function PodcastSection({ isDarkMode, user, directEditingMode }: 
                     setPlayingCardId(id);
                   }}
                   onEdit={(episodeToEdit, e) => handleOpenEdit(episodeToEdit, e)}
+                  onOpenPip={onOpenPip ? (episodeForPip, e) => {
+                    playClickSound(800, "sine");
+                    onOpenPip({
+                      id: episodeForPip.id,
+                      number: episodeForPip.number,
+                      title: episodeForPip.title,
+                      youtubeUrl: episodeForPip.youtubeUrl,
+                      embedCode: episodeForPip.embedCode,
+                      duration: episodeForPip.duration,
+                    });
+                  } : undefined}
                 />
               ))}
             </SortableContext>
